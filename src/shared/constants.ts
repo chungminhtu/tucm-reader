@@ -12,7 +12,6 @@ export const DEFAULT_FEATURES: FeatureToggles = {
 }
 
 export const DEFAULT_ALLOWED_DOMAINS: string[] = []
-export const LEGACY_DEFAULT_ALLOWED_DOMAINS = ['www.reddit.com', 'old.reddit.com']
 
 export const DEFAULT_SETTINGS: FontSettings = {
   fontFamily: 'Lexend Deca',
@@ -34,5 +33,10 @@ export const FONTS = [
   'DM Sans',
   'Manrope',
   'Rubik',
+  'Tilt Neon',
+  'Alata',
+  'Zalando Sans',
+  'Geologica',
+  'Readex Pro',
 ]
 

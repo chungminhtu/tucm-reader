@@ -1,5 +1,5 @@
 import type { FontSettings } from './types'
-import { DEFAULT_SETTINGS, DEFAULT_FEATURES, DEFAULT_ALLOWED_DOMAINS, LEGACY_DEFAULT_ALLOWED_DOMAINS } from './constants'
+import { DEFAULT_SETTINGS, DEFAULT_FEATURES } from './constants'
 
 export function normalizeSettings(raw: Partial<FontSettings>): FontSettings {
   const features: typeof DEFAULT_FEATURES = {
@@ -7,19 +7,11 @@ export function normalizeSettings(raw: Partial<FontSettings>): FontSettings {
     ...(raw.features ?? {}),
   }
 
-  const sanitizedDomains = Array.isArray(raw.allowedDomains)
+  const allowedDomains = Array.isArray(raw.allowedDomains)
     ? raw.allowedDomains
         .filter((domain): domain is string => typeof domain === 'string' && domain.trim().length > 0)
         .map((domain) => domain.trim().toLowerCase())
     : []
-
-  const isLegacyDefault =
-    sanitizedDomains.length === LEGACY_DEFAULT_ALLOWED_DOMAINS.length &&
-    LEGACY_DEFAULT_ALLOWED_DOMAINS.every((domain) => sanitizedDomains.includes(domain))
-
-  const allowedDomains = isLegacyDefault
-    ? [...DEFAULT_ALLOWED_DOMAINS]
-    : sanitizedDomains
 
   return {
     ...DEFAULT_SETTINGS,

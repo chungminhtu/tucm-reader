@@ -21,6 +21,11 @@ const FONT_MAP: Record<string, string> = {
   'DM Sans': 'DM+Sans:wght@400;500;600;700',
   'Manrope': 'Manrope:wght@200..800',
   'Rubik': 'Rubik:wght@300..900',
+  'Tilt Neon': 'Tilt+Neon',
+  'Alata': 'Alata',
+  'Zalando Sans': 'Zalando+Sans:wght@200..900',
+  'Geologica': 'Geologica:wght@100..900',
+  'Readex Pro': 'Readex+Pro:wght@160..700',
 };
 
 const COMMENT_EXPANSION_TEXTS = ['more replies', 'view more comments', 'continue this thread'];
