@@ -976,6 +976,18 @@
   loadLayoutMode();
   loadFullHeight();
 
+  // ---- Promoted-tweet removal (both grid and normal mode) ----
+  function stripPromotedCells() {
+    var cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
+    for (var i = cells.length - 1; i >= 0; i--) {
+      var art = cells[i].querySelector('article');
+      if (art && !art.querySelector('time')) cells[i].remove();
+    }
+  }
+  stripPromotedCells();
+  var adMo = new MutationObserver(function () { stripPromotedCells(); });
+  if (document.body) adMo.observe(document.body, { childList: true, subtree: true });
+
   window.addEventListener('resize', layout);
   setInterval(function () {
     if (!isHome()) {
