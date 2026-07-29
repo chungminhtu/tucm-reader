@@ -586,10 +586,7 @@
     return null;
   }
   function forwardClick(el) {
-    var evs = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-    for (var i = 0; i < evs.length; i++) {
-      el.dispatchEvent(new MouseEvent(evs[i], { bubbles: true, cancelable: true, view: window }));
-    }
+    el.click();
   }
   // Re-clone the live cell so a forwarded action's new state (heart color,
   // count) shows up in the card. Retries while the cell is still hydrating —
@@ -795,6 +792,14 @@
               if (cb[i] === btn && lb[i]) { target = lb[i]; break; }
             }
           }
+          // Translate and other non-action buttons — match by text content
+          var btnText = btn.textContent.trim();
+          if (btnText) {
+            var allBtns = art.querySelectorAll('button, [role="button"], [data-testid="tweetText"]');
+            for (var i = 0; i < allBtns.length; i++) {
+              if (allBtns[i].textContent.trim() === btnText) { target = allBtns[i]; break; }
+            }
+          }
         }
         if (!target) return;
         // X positions menus at the live button's on-screen coords; if the
@@ -813,7 +818,7 @@
       // used to fall back to the reader, which read as "every click opens the
       // detail page". Only a failed restore opens the reader now.
       restoreLiveCell(card, function (art2) {
-        if (art2) act(art2);
+        if (art2) setTimeout(function () { act(art2); }, 300);
         else openReader(card.getAttribute('data-fc-status'));
       });
       return;
