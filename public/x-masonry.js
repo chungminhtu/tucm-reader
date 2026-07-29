@@ -908,16 +908,21 @@
 
   function loadFontLink(family) {
     var id = 'fc-x-font';
-    var href = 'https://fonts.googleapis.com/css2?family=' +
-      encodeURIComponent(family).replace(/%20/g, '+') + ':wght@100;200;300;400;500;600;700;800;900&display=swap';
-    var link = document.getElementById(id);
-    if (!link) {
-      link = document.createElement('link');
-      link.id = id;
-      link.rel = 'stylesheet';
-      (document.head || document.documentElement).appendChild(link);
-    }
-    if (link.href !== href) link.href = href; // may be CSP-blocked on X → silently falls back to the system font
+    var url = 'https://fonts.googleapis.com/css2?family=' +
+      encodeURIComponent(family).replace(/%20/g, '+') + '&display=swap';
+    chrome.runtime.sendMessage(
+      { type: 'FETCH_FONT_CSS', fontUrl: url },
+      function (response) {
+        if (chrome.runtime.lastError || !response || !response.success) return;
+        var style = document.getElementById(id);
+        if (!style) {
+          style = document.createElement('style');
+          style.id = id;
+          (document.head || document.documentElement).appendChild(style);
+        }
+        if (style.textContent !== response.css) style.textContent = response.css;
+      }
+    );
   }
 
   function applyTypography(s) {
