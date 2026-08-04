@@ -109,29 +109,25 @@ async function getSettings(): Promise<FontSettings> {
   // Wait for storage to be available
   const storageReady = await waitForStorage();
   if (!storageReady) {
-    console.warn('[FontChanger] chrome.storage.local not available after retries, using default settings');
     return DEFAULT_SETTINGS;
   }
 
   return new Promise((resolve) => {
     try {
       if (!isStorageAvailable()) {
-        console.warn('[FontChanger] Storage became unavailable, using default settings');
         resolve(DEFAULT_SETTINGS);
         return;
       }
 
       chrome.storage.local.get(DEFAULT_SETTINGS as unknown as Record<string, unknown>, (result) => {
         if (chrome.runtime.lastError) {
-          console.error('[FontChanger] Storage error:', chrome.runtime.lastError);
           // Use default settings instead of rejecting
           resolve(DEFAULT_SETTINGS);
           return;
         }
         resolve(normalizeSettings(result as Partial<FontSettings>));
       });
-    } catch (error) {
-      console.error('[FontChanger] Error accessing storage:', error);
+    } catch {
       // Use default settings instead of rejecting
       resolve(DEFAULT_SETTINGS);
     }
@@ -149,7 +145,6 @@ async function loadFont(fontFamily: string): Promise<void> {
   }
 
   const fontUrl = `https://fonts.googleapis.com/css2?family=${getFontQuery(fontFamily)}&display=swap`;
-  console.log(`[FontChanger] Loading font "${fontFamily}" from Google Fonts via background script: ${fontUrl}`);
 
   try {
     const css = await fetchFontCss(fontUrl);
@@ -158,10 +153,8 @@ async function loadFont(fontFamily: string): Promise<void> {
     style.textContent = css;
     document.head.appendChild(style);
 
-    console.log(`[FontChanger] Font "${fontFamily}" loaded successfully, CSS length: ${css.length}`);
     await waitForFontsReady();
   } catch (error) {
-    console.error(`[FontChanger] Failed to load font "${fontFamily}":`, error);
     throw error instanceof Error ? error : new Error(String(error));
   }
 }
@@ -170,7 +163,6 @@ async function loadAllFonts(): Promise<void> {
   if (!document.head || fontsPreloaded) return;
 
   fontsPreloaded = true;
-  console.log('[FontChanger] Preloading all fonts...');
 
   await Promise.all(
     Object.keys(FONT_MAP).map(async (fontFamily) => {
@@ -185,13 +177,11 @@ async function loadAllFonts(): Promise<void> {
         style.id = fontStyleId;
         style.textContent = css;
         document.head?.appendChild(style);
-      } catch (error) {
-        console.error(`[FontChanger] Failed to preload font "${fontFamily}":`, error);
+      } catch {
+        // Ignore fonts that fail to preload
       }
     })
   );
-
-  console.log('[FontChanger] All fonts preloaded');
 }
 
 function clearTypography(): void {
@@ -210,7 +200,6 @@ function clearTypography(): void {
 
 function applyTypography(settings: FontSettings): void {
   if (!document.head) {
-    console.warn('[FontChanger] document.head not available, retrying...')
     setTimeout(() => applyTypography(settings), 100)
     return
   }
@@ -387,8 +376,8 @@ function runDomTasks(features: FeatureToggles): void {
 
     try {
       task();
-    } catch (error) {
-      console.error(`[FontChanger] Task ${task.name || key} failed:`, error);
+    } catch {
+      // Keep the remaining tasks running if one fails
     }
   });
 }
@@ -459,27 +448,15 @@ async function applyEnhancements(): Promise<void> {
     const domainAllowed = isDomainAllowed(currentHost, settings.allowedDomains)
     const typographyEnabled = settings.features.typography && domainAllowed
 
-    console.log('[FontChanger] applyEnhancements:', {
-      currentHost,
-      domainAllowed,
-      typographyEnabled,
-      fontFamily: settings.fontFamily,
-      fontSize: settings.fontSize
-    })
-
     if (typographyEnabled) {
-      console.log('[FontChanger] Applying typography...')
       try {
         await loadAllFonts();
         await loadFont(settings.fontFamily);
         applyTypography(settings);
-        console.log('[FontChanger] Typography applied successfully')
-      } catch (error) {
-        console.error('[FontChanger] Failed to apply typography settings:', error);
+      } catch {
         clearTypography();
       }
     } else {
-      console.log('[FontChanger] Typography skipped (feature off or site not allowed)')
       clearTypography();
     }
 
@@ -488,9 +465,8 @@ async function applyEnhancements(): Promise<void> {
       // Inject Reddit-specific CSS only on Reddit domains
       injectRedditCSS();
     }
-  } catch (error) {
-    console.error('[FontChanger] applyEnhancements failed:', error);
-    // Don't throw - just log the error and continue
+  } catch {
+    // Don't throw - just continue
   }
 }
 
@@ -505,9 +481,7 @@ function queueEnhancements(): void {
 
   rerunRequested = false;
   activeRun = applyEnhancements()
-    .catch((error) => {
-      console.error('[FontChanger] Enhancement pipeline failed:', error);
-    })
+    .catch(() => {})
     .finally(() => {
       activeRun = null;
       if (rerunRequested) {
@@ -552,7 +526,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         queueEnhancements()
         sendResponse({ success: true })
       } catch (error) {
-        console.error('[FontChanger] Failed to apply font settings from popup:', error)
         sendResponse({
           success: false,
           error: error instanceof Error ? error.message : String(error),

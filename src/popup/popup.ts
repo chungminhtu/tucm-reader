@@ -28,23 +28,20 @@ function isStorageAvailable(): boolean {
 async function loadSettings(): Promise<FontSettings> {
   return new Promise((resolve) => {
     if (!isStorageAvailable()) {
-      console.warn('[FontChanger Popup] chrome.storage.local is not available, using default settings');
       resolve(DEFAULT_SETTINGS);
       return;
     }
-    
+
     try {
       chrome.storage.local.get(DEFAULT_SETTINGS as unknown as Record<string, unknown>, (result) => {
         if (chrome.runtime.lastError) {
-          console.error('[FontChanger Popup] Storage error:', chrome.runtime.lastError);
           // Use default settings instead of rejecting
           resolve(DEFAULT_SETTINGS);
           return;
         }
         resolve(normalizeSettings(result as Partial<FontSettings>))
       })
-    } catch (error) {
-      console.error('[FontChanger Popup] Error accessing storage:', error);
+    } catch {
       // Use default settings instead of rejecting
       resolve(DEFAULT_SETTINGS);
     }
@@ -54,7 +51,6 @@ async function loadSettings(): Promise<FontSettings> {
 async function saveSettings(settings: FontSettings): Promise<void> {
   return new Promise((resolve) => {
     if (!isStorageAvailable()) {
-      console.warn('[FontChanger Popup] chrome.storage.local is not available, cannot save settings');
       // Resolve anyway to prevent UI blocking
       resolve();
       return;
@@ -69,7 +65,6 @@ async function saveSettings(settings: FontSettings): Promise<void> {
         },
         () => {
           if (chrome.runtime.lastError) {
-            console.error('[FontChanger Popup] Storage error:', chrome.runtime.lastError);
             // Resolve anyway to prevent UI blocking
             resolve();
             return;
@@ -77,8 +72,7 @@ async function saveSettings(settings: FontSettings): Promise<void> {
           resolve()
         }
       )
-    } catch (error) {
-      console.error('[FontChanger Popup] Error saving to storage:', error);
+    } catch {
       // Resolve anyway to prevent UI blocking
       resolve();
     }
@@ -179,8 +173,7 @@ async function initPopup() {
   let settings: FontSettings
   try {
     settings = await loadSettings()
-  } catch (error) {
-    console.error('[FontChanger Popup] Failed to load settings:', error);
+  } catch {
     // Use default settings if storage is unavailable
     settings = DEFAULT_SETTINGS
   }

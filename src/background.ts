@@ -14,10 +14,7 @@ async function convertFontUrlsToDataUris(css: string): Promise<string> {
       }
     }
 
-    console.log(`[FontChanger Background] Found ${fontUrls.length} font URLs to convert`);
-
     if (fontUrls.length === 0) {
-      console.warn('[FontChanger Background] No font URLs found in CSS');
       return css;
     }
 
@@ -27,10 +24,8 @@ async function convertFontUrlsToDataUris(css: string): Promise<string> {
 
     for (const fontUrl of urlsToProcess) {
       try {
-        console.log(`[FontChanger Background] Converting font URL: ${fontUrl.substring(0, 50)}...`);
         const response = await fetch(fontUrl);
         if (!response.ok) {
-          console.warn(`[FontChanger Background] Font fetch failed: ${response.status}`);
           continue;
         }
 
@@ -51,9 +46,8 @@ async function convertFontUrlsToDataUris(css: string): Promise<string> {
         });
 
         replacements.push({ original: fontUrl, dataUri });
-        console.log(`[FontChanger Background] Successfully converted font URL to data URI`);
-      } catch (error) {
-        console.error(`[FontChanger Background] Failed to convert font URL to data URI: ${fontUrl.substring(0, 50)}...`, error);
+      } catch {
+        // Skip fonts that fail to convert; the original URL stays in the CSS
       }
     }
 
@@ -65,10 +59,8 @@ async function convertFontUrlsToDataUris(css: string): Promise<string> {
       modifiedCss = modifiedCss.replace(new RegExp(escapedUrl, 'g'), dataUri);
     });
 
-    console.log(`[FontChanger Background] Converted ${replacements.length} font URLs to data URIs`);
     return modifiedCss;
-  } catch (error) {
-    console.error('[FontChanger Background] Error in convertFontUrlsToDataUris:', error);
+  } catch {
     return css; // Return original CSS if conversion fails
   }
 }
@@ -109,7 +101,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // Use async function to properly handle the promise
     (async () => {
       try {
-        console.log('[FontChanger Background] Fetching font CSS from:', fontUrl);
         const response = await fetch(fontUrl);
 
         if (!response.ok) {
@@ -117,16 +108,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
 
         let css = await response.text();
-        console.log('[FontChanger Background] Successfully fetched font CSS, length:', css.length);
 
         // Convert font file URLs to data URIs to bypass CSP
-        console.log('[FontChanger Background] Converting font URLs to data URIs...');
         css = await convertFontUrlsToDataUris(css);
-        console.log('[FontChanger Background] Font CSS converted, length:', css.length);
 
         sendResponse({ success: true, css });
       } catch (error) {
-        console.error('[FontChanger Background] Failed to fetch font:', error);
         sendResponse({
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
