@@ -17,7 +17,7 @@ const html = fs.readFileSync(path.join(__dirname, 'x-fixture.html'), 'utf8')
   .replace(/<header role="banner">[\s\S]*?<\/header>/, '');
 const script = fs.readFileSync(path.join(root, 'userscript/dist/x-masonry.user.js'), 'utf8');
 const CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://*.twimg.com; " +
-  "style-src-elem 'self' 'unsafe-inline' https://*.twimg.com; font-src 'self' https://*.twimg.com data:; " +
+  "style-src-elem 'self' 'unsafe-inline' https://*.twimg.com; font-src 'self' https://*.twimg.com; " +
   "connect-src 'self' https://api.x.com https://*.twimg.com https://*.x.com; img-src 'self' data: blob: https://*.twimg.com";
 const UA = 'Mozilla/5.0 (Android 14; Mobile; rv:130.0) Gecko/130.0 Firefox/130.0';
 
@@ -94,11 +94,11 @@ res.afterCols = { cols: await page.evaluate(() => document.querySelectorAll('#fc
 await page.screenshot({ path: path.join(out, 'masonry-2.png') });
 // Bookerly: Amazon-only font -> stack 'Bookerly','Literata', loads Literata (has Vietnamese); panel shows the load status.
 await page.selectOption('#xab-font', 'Bookerly');
-await page.waitForFunction(() => /Literata/.test((document.getElementById('fc-x-font') || {}).textContent || ''), null, { timeout: 20000 }).catch(() => {});
+await page.waitForFunction(() => [...document.fonts].some((f) => f.family === 'Literata' && f.status === 'loaded'), null, { timeout: 20000 }).catch(() => {});
 await page.waitForTimeout(500);
 res.bookerly = await page.evaluate(() => {
   const t = document.querySelector('#fc-grid .fc-card [data-testid="tweetText"]');
-  return { stack: getComputedStyle(t).fontFamily, literataCss: /Literata/.test((document.getElementById('fc-x-font') || {}).textContent || ''),
+  return { stack: getComputedStyle(t).fontFamily, literataCss: [...document.fonts].some((f) => f.family === 'Literata' && f.status === 'loaded'),
     literataVi: document.fonts.check('16px "Literata"', 'Được ẩn ơ ư ế ộ ữ'), status: (document.getElementById('xab-font-status') || {}).textContent || '' };
 });
 await page.screenshot({ path: path.join(out, 'masonry-bookerly.png') });

@@ -54,6 +54,36 @@ const chrome = (() => {
     sset(FONT_CACHE + fontUrl, res);
     return res;
   }
+  // x.com's page CSP font-src does not allow data: URLs, so @font-face rules with data: URIs are
+  // blocked. Register each face with the FontFace API from an ArrayBuffer instead: that is not a
+  // URL load, so CSP font-src does not apply. Returns the number of faces that loaded.
+  const added = {};
+  async function registerFaces(css) {
+    const blocks = css.match(/@font-face\s*\{[^}]*\}/g) || [];
+    let ok = 0;
+    for (const blk of blocks) {
+      const fam = /font-family:\s*['"]?([^;'"]+)/.exec(blk);
+      const data = /url\(data:[^;]+;base64,([^)]+)\)/.exec(blk);
+      if (!fam || !data) continue;
+      const key = fam[1] + '|' + data[1].slice(0, 64) + data[1].length;
+      if (added[key]) { ok++; continue; }
+      const desc = {};
+      const w = /font-weight:\s*([^;]+);/.exec(blk); if (w) desc.weight = w[1].trim();
+      const st = /font-style:\s*([^;]+);/.exec(blk); if (st) desc.style = st[1].trim();
+      const ur = /unicode-range:\s*([^;]+);/.exec(blk); if (ur) desc.unicodeRange = ur[1].trim();
+      desc.display = 'swap';
+      const bin = atob(data[1]); const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      try {
+        const face = new FontFace(fam[1].trim(), buf.buffer, desc);
+        await face.load();
+        document.fonts.add(face);
+        added[key] = face; ok++;
+      } catch (_) {}
+    }
+    if (!ok) throw new Error('font faces failed to load');
+    return ok;
+  }
   // FC_TWEET_JSON: public syndication JSON for in-card video (same URL/token as background.ts).
   async function tweetJson(id) {
     if (!/^\d+$/.test(id)) throw new Error('bad id');
@@ -87,7 +117,9 @@ const chrome = (() => {
         const done = (r) => { try { cb && cb(r); } catch (_) {} };
         // Font load result is kept for the Aa panel status line (evidence on phones, no console there).
         const fontStatus = (st) => { api.fontStatus = st; try { window.dispatchEvent(new CustomEvent('xab-font-status')); } catch (_) {} };
-        if (msg && msg.type === 'FETCH_FONT_CSS') fontCss(msg.fontUrl).then((css) => { fontStatus({ url: msg.fontUrl, ok: true, size: css.length }); done({ success: true, css }); }, (e) => { fontStatus({ url: msg.fontUrl, ok: false, error: String(e.message) }); done({ success: false, error: String(e.message) }); });
+        // The CSS sent back is only a comment: the faces are already in document.fonts, and data: rules
+        // would only be blocked by CSP.
+        if (msg && msg.type === 'FETCH_FONT_CSS') fontCss(msg.fontUrl).then(registerFaces).then((n) => { fontStatus({ url: msg.fontUrl, ok: true, size: n }); done({ success: true, css: '/* ' + n + ' font faces via FontFace API */' }); }, (e) => { fontStatus({ url: msg.fontUrl, ok: false, error: String(e.message) }); done({ success: false, error: String(e.message) }); });
         else if (msg && msg.type === 'FC_TWEET_JSON') tweetJson(String(msg.id)).then((tweet) => done({ success: true, tweet }), (e) => done({ success: false, error: String(e.message) }));
         else done({ success: false, error: 'unknown message' });
       },
