@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cài TUCM Reader</title>
+<style>
+  :root { --bg:#fff; --fg:#0f1419; --mut:#536471; --acc:#1d9bf0; --card:#f7f9f9; --bd:#e1e8ed; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#000; --fg:#e7e9ea; --mut:#8b98a5; --acc:#1d9bf0; --card:#16181c; --bd:#2f3336; } }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:24px; margin:0 0 4px } h2 { font-size:19px; margin:28px 0 8px }
+  p.sub { color:var(--mut); margin:0 0 16px }
+  ol { padding-left:22px; margin:0 } li { margin:6px 0 }
+  code, .url { font:14px/1.4 ui-monospace,Menlo,monospace; word-break:break-all }
+  .url { display:block; background:var(--card); border:1px solid var(--bd); border-radius:8px; padding:8px 10px; margin:6px 0; color:var(--acc); text-decoration:none }
+  .note { background:var(--card); border-left:3px solid var(--acc); padding:8px 12px; border-radius:6px; margin:12px 0; color:var(--mut); font-size:14px }
+  figure { margin:12px 0 } img { width:100%; height:auto; border:1px solid var(--bd); border-radius:10px }
+  figcaption { color:var(--mut); font-size:13px; margin-top:4px }
+</style>
+</head>
+<body>
+<main>
+<h1>Cài TUCM Reader</h1>
+<p class="sub">Lưới đọc X, chọn số cột, phông chữ, chặn quảng cáo. Máy mới hoàn toàn.</p>
+
+<h2>Android (Edge + Tampermonkey)</h2>
+<ol>
+  <li><b>Play Store</b> → cài <b>NetBird</b> → đăng nhập → bật kết nối.</li>
+  <li><b>Play Store</b> → cài <b>Microsoft Edge</b>.</li>
+  <li>Edge → <b>☰</b> → <b>Extensions</b> → cài <b>Tampermonkey</b>.</li>
+  <li>Bấm biểu tượng Tampermonkey → <b>Dashboard</b>.
+    <figure><img src="img/tm-menu.jpg" alt="Menu Tampermonkey, mục Dashboard"><figcaption>Menu Tampermonkey → Dashboard</figcaption></figure></li>
+  <li>Tab <b>Utilities</b> → kéo xuống <b>Import from URL</b> → dán link → bấm <b>Install</b>:
+    <span class="url">http://minhtu-m5max-64gb.netbird.selfhosted:7445/x-masonry.user.js</span>
+    <figure><img src="img/tm-utilities.jpg" alt="Tampermonkey Utilities, Import from URL"><figcaption>Utilities → Import from URL → Install</figcaption></figure></li>
+  <li>Ở trang hiện ra, bấm <b>Install</b> (hoặc <b>Update</b>).</li>
+  <li>Mở <b>x.com</b> và đăng nhập. Nút <b>Aa</b> (góc dưới phải): phông chữ, cỡ chữ, số cột. Nút <b>☷</b>: bật/tắt lưới.</li>
+</ol>
+<div class="note">Script không chạy? Bật <b>Allow User Scripts</b> (hoặc <b>Developer Mode</b>) cho Tampermonkey — <a href="https://www.tampermonkey.net/faq.php?locale=en&amp;q=Q209">FAQ Q209</a>. Đã có script cũ “X Masonry + Adblock” thì xoá nó.</div>
+
+<h2>Máy tính (Chrome)</h2>
+<ol>
+  <li>Cài <b>NetBird</b> (netbird.io) → đăng nhập → bật kết nối.</li>
+  <li>Cài <b>Google Chrome</b>.</li>
+  <li>Tải và giải nén vào một thư mục cố định:
+    <a class="url" href="http://minhtu-m5max-64gb.netbird.selfhosted:7445/tucm-reader-latest.zip">http://minhtu-m5max-64gb.netbird.selfhosted:7445/tucm-reader-latest.zip</a></li>
+  <li><code>chrome://extensions</code> → bật <b>Developer mode</b> → <b>Load unpacked</b> → chọn thư mục vừa giải nén.</li>
+  <li>Mở <b>x.com</b> và đăng nhập. Số cột: bấm biểu tượng extension → <b>X grid columns</b>.</li>
+</ol>
+
+<div class="note">Cùng mạng LAN (không cần NetBird): đổi <code>minhtu-m5max-64gb.netbird.selfhosted:7445</code> thành <code>192.168.8.180:7446</code>.</div>
+</main>
+</body>
+</html>
