@@ -466,16 +466,44 @@
     return bar;
   }
 
+  // Icon-only round buttons: icons are SVG built with createElementNS (no innerHTML,
+  // safe under X's Trusted Types CSP) so they sit exactly in the centre of the circle.
+  // Each icon is a list of [x, y, w, h] rects on a 20x20 box.
+  var ICONS = {
+    masonry: [[2, 2, 7, 9], [11, 2, 7, 5], [2, 13, 7, 5], [11, 9, 7, 9]],
+    rows: [[2, 2, 7, 7], [11, 2, 7, 7], [2, 11, 7, 7], [11, 11, 7, 7]],
+    grid: [[2, 3, 4, 14], [8, 3, 4, 14], [14, 3, 4, 14]],
+    feed: [[2, 3, 16, 3], [2, 8.5, 16, 3], [2, 14, 16, 3]]
+  };
+  function setIcon(btn, name, label) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 20 20');
+    svg.setAttribute('width', '20');
+    svg.setAttribute('height', '20');
+    svg.setAttribute('aria-hidden', 'true');
+    ICONS[name].forEach(function (r) {
+      var e = document.createElementNS(NS, 'rect');
+      e.setAttribute('x', r[0]); e.setAttribute('y', r[1]);
+      e.setAttribute('width', r[2]); e.setAttribute('height', r[3]);
+      e.setAttribute('rx', '1.5'); e.setAttribute('fill', 'currentColor');
+      svg.appendChild(e);
+    });
+    btn.textContent = '';
+    btn.appendChild(svg);
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  }
+
   // ---- Layout mode (masonry <-> aligned rows) -------------------------------
   function updateLayoutBtn() {
-    if (layoutBtn) layoutBtn.textContent = layoutMode === 'rows' ? '▦ Rows' : '▤ Masonry';
+    if (layoutBtn) setIcon(layoutBtn, layoutMode === 'rows' ? 'rows' : 'masonry', layoutMode === 'rows' ? 'Layout: rows' : 'Layout: masonry');
   }
   function ensureLayoutBtn() {
     if (layoutBtn) return;
     layoutBtn = document.createElement('button');
     layoutBtn.id = 'fc-layout';
     layoutBtn.type = 'button';
-    layoutBtn.title = 'Toggle grid layout';
     layoutBtn.addEventListener('click', toggleLayout);
     fabBar().appendChild(layoutBtn);
     updateLayoutBtn();
@@ -501,14 +529,13 @@
 
   // ---- Grid on/off (fc-gridtoggle) -----------------------------------------
   function updateGridToggleBtn() {
-    if (gridToggleBtn) gridToggleBtn.textContent = gridOff ? '☰ Feed' : '☷ Grid';
+    if (gridToggleBtn) setIcon(gridToggleBtn, gridOff ? 'feed' : 'grid', gridOff ? 'Grid off (feed)' : 'Grid on');
   }
   function ensureGridToggleBtn() {
     if (gridToggleBtn) return;
     gridToggleBtn = document.createElement('button');
     gridToggleBtn.id = 'fc-gridtoggle';
     gridToggleBtn.type = 'button';
-    gridToggleBtn.title = 'Grid on/off';
     gridToggleBtn.addEventListener('click', function () {
       gridOff = !gridOff;
       try { chrome.storage.local.set({ xGridOff: gridOff }); } catch (e) { /* no storage */ }
