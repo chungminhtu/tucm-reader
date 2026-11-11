@@ -52,18 +52,34 @@ html.fc-home [data-testid="primaryColumn"] {
   background: #1a8cd8;
 }
 
-/* Floating buttons: one shared style for the layout pill (#fc-layout), grid
-   on/off (#fc-gridtoggle) and the userscript text panel (#xab-fab). All sit in
-   one bottom-right row above X's mobile bottom nav, so none covers a card's
-   time / "..." menu. Not gated by html.fc-home: #xab-fab shows on every page. */
+/* Floating buttons: layout pill (#fc-layout), grid on/off (#fc-gridtoggle) and
+   the userscript text panel (#xab-fab) are all icon + text pills with one style,
+   in one flex bar at the bottom right, above X's mobile bottom nav, so none
+   covers a card's time / "..." menu. Not gated by html.fc-home: #xab-fab shows
+   on every page. */
+#fc-fabbar {
+  position: fixed;
+  right: 12px;
+  bottom: 62px;
+  z-index: 2147483000;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+#fc-fabbar:empty { display: none; }
+#fc-layout { order: 1; }
+#fc-gridtoggle { order: 2; }
+#xab-fab { order: 3; }
 #fc-layout,
 #fc-gridtoggle,
 #xab-fab {
-  position: fixed;
-  bottom: 62px;
-  z-index: 2147483000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 36px;
-  padding: 0;
+  margin: 0;
+  padding: 0 14px;
+  white-space: nowrap;
   font: 600 14px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #fff;
   background: #1d9bf0;
@@ -72,9 +88,6 @@ html.fc-home [data-testid="primaryColumn"] {
   cursor: pointer;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
-#xab-fab { right: 12px; width: 36px; }
-#fc-gridtoggle { right: 56px; width: 36px; font-size: 16px; }
-#fc-layout { right: 100px; padding: 0 14px; }
 #fc-layout:hover,
 #fc-gridtoggle:hover,
 #xab-fab:hover {

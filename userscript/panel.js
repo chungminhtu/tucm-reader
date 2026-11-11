@@ -7,8 +7,8 @@
   const DEF = { fontFamily: 'Lexend Deca', fontSize: 16, fontWeight: 400, lineHeight: 1.5, xColsMobile: 1, xColsTablet: 2, xColsDesktop: 'auto' };
   const vi = /^vi/i.test((document.documentElement && document.documentElement.lang) || navigator.language || '');
   const T = vi
-    ? { font: 'Phông chữ', size: 'Cỡ chữ', weight: 'Độ đậm', lh: 'Giãn dòng', cols: 'Số cột', auto: 'Tự động', close: 'Đóng', title: 'Cài đặt chữ' }
-    : { font: 'Font', size: 'Font size', weight: 'Weight', lh: 'Line height', cols: 'Columns', auto: 'Auto', close: 'Close', title: 'Text settings' };
+    ? { font: 'Phông chữ', size: 'Cỡ chữ', weight: 'Độ đậm', lh: 'Giãn dòng', cols: 'Số cột', auto: 'Tự động', close: 'Đóng', title: 'Cài đặt chữ', btn: 'Chữ' }
+    : { font: 'Font', size: 'Font size', weight: 'Weight', lh: 'Line height', cols: 'Columns', auto: 'Auto', close: 'Close', title: 'Text settings', btn: 'Text' };
   function bucket() {
     const w = window.innerWidth;
     if (w < 600) return 'mobile';
@@ -40,7 +40,7 @@
   function build(s) {
     if (document.getElementById('xab-panel')) return;
     const st = Object.assign({}, s);
-    const fab = el('button', { id: 'xab-fab', textContent: 'Aa', title: T.title, type: 'button' });
+    const fab = el('button', { id: 'xab-fab', textContent: 'Aa ' + T.btn, title: T.title, type: 'button' });
     const panel = el('div', { id: 'xab-panel' });
     panel.style.cssText = 'position:fixed;right:12px;bottom:106px;z-index:2147483000;width:min(250px,calc(100vw - 12px));padding:8px;border-radius:12px;background:#16181c;border:1px solid #2f3336;box-shadow:0 4px 20px rgba(0,0,0,.5);display:none';
     const fieldCss = 'padding:6px;border-radius:6px;background:#000;color:#fff;border:1px solid #536471;font-size:14px';
@@ -94,7 +94,10 @@
     window.addEventListener('xab-font-status', showStatus);
     showStatus();
     panel.append(row(T.font, sel), fst, row(T.size, size, sizeV), row(T.weight, wt), row(T.lh, lh, lhV), row(T.cols, cols), close);
-    document.body.append(fab, panel);
+    let bar = document.getElementById('fc-fabbar');
+    if (!bar) { bar = el('div', { id: 'fc-fabbar' }); document.body.appendChild(bar); }
+    bar.appendChild(fab);
+    document.body.appendChild(panel);
     if (typeof GM_registerMenuCommand === 'function') {
       try { GM_registerMenuCommand(T.title, () => { panel.style.display = 'block'; }); } catch (_) {}
     }

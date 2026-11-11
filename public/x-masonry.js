@@ -454,6 +454,18 @@
     window.scrollBy(0, window.innerHeight * 1.0);
   }
 
+  // One shared bottom-right bar for the floating buttons (layout, grid on/off and
+  // the userscript Aa button). Flex row, so pills of any width line up.
+  function fabBar() {
+    var bar = document.getElementById('fc-fabbar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'fc-fabbar';
+      document.body.appendChild(bar);
+    }
+    return bar;
+  }
+
   // ---- Layout mode (masonry <-> aligned rows) -------------------------------
   function updateLayoutBtn() {
     if (layoutBtn) layoutBtn.textContent = layoutMode === 'rows' ? '▦ Rows' : '▤ Masonry';
@@ -465,7 +477,7 @@
     layoutBtn.type = 'button';
     layoutBtn.title = 'Toggle grid layout';
     layoutBtn.addEventListener('click', toggleLayout);
-    document.body.appendChild(layoutBtn);
+    fabBar().appendChild(layoutBtn);
     updateLayoutBtn();
   }
   function toggleLayout() {
@@ -489,7 +501,7 @@
 
   // ---- Grid on/off (fc-gridtoggle) -----------------------------------------
   function updateGridToggleBtn() {
-    if (gridToggleBtn) gridToggleBtn.textContent = gridOff ? '☰' : '☷';
+    if (gridToggleBtn) gridToggleBtn.textContent = gridOff ? '☰ Feed' : '☷ Grid';
   }
   function ensureGridToggleBtn() {
     if (gridToggleBtn) return;
@@ -504,7 +516,7 @@
       if (gridOff) unmount();
       syncChromeUi();
     });
-    document.body.appendChild(gridToggleBtn);
+    fabBar().appendChild(gridToggleBtn);
     updateGridToggleBtn();
   }
   // Hide layout + grid toggle while reading; hide layout while grid off; hide
@@ -512,7 +524,7 @@
   function syncChromeUi() {
     var home = isHome();
     if (gridToggleBtn) gridToggleBtn.style.display = (home && !readerOpen) ? '' : 'none';
-    if (layoutBtn) layoutBtn.style.display = (home && !readerOpen && !gridOff && overlay) ? 'block' : 'none';
+    if (layoutBtn) layoutBtn.style.display = (home && !readerOpen && !gridOff && overlay) ? '' : 'none';
   }
 
   // ---- Reader (live thread, no reload) -------------------------------------
