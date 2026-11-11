@@ -4,8 +4,10 @@
 // masonry grid (kept permanently) and drives X's virtualized timeline in the
 // background to load more as you scroll our grid.
 //
-// LAYOUT: full width — the left nav AND both sidebars are hidden on /home (CSS,
-// gated by html.fc-home). Only mounts on /home.
+// LAYOUT: full width to the right of the left nav on /home (html.fc-home hides
+// the right sidebar). Column count from chrome.storage (xColsMobile 1–3 /
+// xColsTablet 1–4 / xColsDesktop 'auto'|1–6); mobile (<600) tightens padding/gap.
+// Cards always grow to full height (no max-height cap).
 //
 // READER: clicking a card's reply (chat) icon opens X's OWN live thread (full
 // article + comments + every working button, exactly like the detail page)
@@ -18,9 +20,8 @@
 // as a modal rendered a blank gray box — X fights position:fixed — so we reveal
 // it in place instead.)
 //
-// TOGGLES (floating, top-right): layout (masonry <-> aligned rows) and full-height
-// (cards grow to fit, capped at 100vh instead of the 600px clip). Both persist in
-// chrome.storage.local (xLayout / xFullHeight).
+// TOGGLES: layout (masonry <-> rows, xLayout) top-right; grid on/off
+// (fc-gridtoggle, xGridOff) bottom-right. Both persist in chrome.storage.local.
 //
 // PERF: masonry uses explicit flex columns (append each card to the shortest
 // column) — NOT CSS column-count. Harvest is debounced; clones are stripped of
@@ -51,12 +52,26 @@
     var w = Math.round(rail.getBoundingClientRect().width);
     return (w > 0 && w < window.innerWidth * 0.5) ? w : 0;
   }
+  // Bucket by viewport: <600 mobile, 600..1200 tablet, >1200 desktop.
+  var xColsMobile = 1, xColsTablet = 2, xColsDesktop = 'auto';
+  var gridOff = false;
+  function clampInt(n, lo, hi, fallback) {
+    n = parseInt(n, 10);
+    if (isNaN(n)) return fallback;
+    return Math.max(lo, Math.min(hi, n));
+  }
   function colCount() {
-    var w = window.innerWidth - navWidth(); // full width MINUS the left nav
-    if (w > 1600) return 4;
-    if (w > 1200) return 3;
-    if (w > 800) return 2;
-    return 1;
+    var iw = window.innerWidth;
+    if (iw < 600) return clampInt(xColsMobile, 1, 3, 1);
+    if (iw <= 1200) return clampInt(xColsTablet, 1, 4, 2);
+    if (xColsDesktop === 'auto') {
+      var w = iw - navWidth(); // full width MINUS the left nav
+      if (w > 1600) return 4;
+      if (w > 1200) return 3;
+      if (w > 800) return 2;
+      return 1;
+    }
+    return clampInt(xColsDesktop, 1, 6, 3);
   }
 
   var seen = new Set();
@@ -71,7 +86,9 @@
   var readerOpen = false, backBtn = null;
   var layoutMode = 'masonry'; // 'masonry' (staggered columns) | 'rows' (aligned grid). Loaded from storage.
   var layoutBtn = null;
-  var fullHeight = false, fullHeightBtn = null; // full-height mode: cards grow to fit (capped 100vh), no inline scroll.
+  var gridToggleBtn = null;
+  var cardLiveCells = typeof WeakMap !== 'undefined' ? new WeakMap() : null; // card -> live cell for menu feedback
+  var menuPendingCard = null;
 
   function keyOf(article) {
     var links = article.querySelectorAll('a[href*="/status/"]');
@@ -268,9 +285,21 @@
       grid.style.alignItems = 'flex-start';
     }
   }
+  // Mobile (<600): overlay padding 0 and 4px gap; desktop keeps 8px / GAP.
+  function applyMobilePad() {
+    if (!overlay || !grid) return;
+    if (window.innerWidth < 600) {
+      overlay.style.padding = '0';
+      grid.style.gap = '4px';
+    } else {
+      overlay.style.padding = '8px';
+      grid.style.gap = GAP + 'px';
+    }
+  }
   function layout() {
     if (!grid) return;
     positionOverlay();
+    applyMobilePad();
     var n = colCount();
     applyGridStyle(n);
     // Re-parenting a scrollable card resets its scrollTop, so capture each card's
@@ -368,9 +397,8 @@
     }
   }
 
-  // Toggle .fc-clipped on cards whose content overflows the CSS max-height cap.
-  // Clipped cards become inline-scrollable (CSS shows the scrollbar on hover) so
-  // long posts are read in place — no "Show more". Re-run as images load & grow.
+  // Toggle .fc-clipped when content overflows (no-op with max-height:none — kept
+  // so a future cap can reuse it). Re-run as images load & grow.
   function markClipped() {
     for (var i = 0; i < cards.length; i++) {
       var c = cards[i];
@@ -458,39 +486,33 @@
     } catch (e) { /* no storage */ }
   }
 
-  // ---- Full-height mode (cards grow to fit, capped at 100vh) ----------------
-  function updateFullHeightBtn() {
-    if (fullHeightBtn) fullHeightBtn.textContent = fullHeight ? '↕ Full height: on' : '↕ Full height: off';
+  // ---- Grid on/off (fc-gridtoggle) -----------------------------------------
+  function updateGridToggleBtn() {
+    if (gridToggleBtn) gridToggleBtn.textContent = gridOff ? '☰' : '☷';
   }
-  function ensureFullHeightBtn() {
-    if (fullHeightBtn) return;
-    fullHeightBtn = document.createElement('button');
-    fullHeightBtn.id = 'fc-fullheight';
-    fullHeightBtn.type = 'button';
-    fullHeightBtn.title = 'Toggle full-height cards';
-    fullHeightBtn.addEventListener('click', toggleFullHeight);
-    document.body.appendChild(fullHeightBtn);
-    updateFullHeightBtn();
+  function ensureGridToggleBtn() {
+    if (gridToggleBtn) return;
+    gridToggleBtn = document.createElement('button');
+    gridToggleBtn.id = 'fc-gridtoggle';
+    gridToggleBtn.type = 'button';
+    gridToggleBtn.title = 'Grid on/off';
+    gridToggleBtn.style.cssText = 'position:fixed;right:40px;bottom:62px;z-index:2147483000;width:28px;height:28px;padding:0;border-radius:50%;border:none;background:#1d9bf0;color:#fff;opacity:.55;font:700 14px system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.3)';
+    gridToggleBtn.addEventListener('click', function () {
+      gridOff = !gridOff;
+      try { chrome.storage.local.set({ xGridOff: gridOff }); } catch (e) { /* no storage */ }
+      updateGridToggleBtn();
+      if (gridOff) unmount();
+      syncChromeUi();
+    });
+    document.body.appendChild(gridToggleBtn);
+    updateGridToggleBtn();
   }
-  function applyFullHeight() {
-    if (overlay) overlay.classList.toggle('fc-full', fullHeight); // CSS caps cards at 100vh, drops the 600px clip
-  }
-  function toggleFullHeight() {
-    fullHeight = !fullHeight;
-    try { chrome.storage.local.set({ xFullHeight: fullHeight }); } catch (e) { /* no storage */ }
-    updateFullHeightBtn();
-    applyFullHeight();
-    markClipped();
-  }
-  function loadFullHeight() {
-    try {
-      chrome.storage.local.get({ xFullHeight: false }, function (res) {
-        fullHeight = !!(res && res.xFullHeight);
-        updateFullHeightBtn();
-        applyFullHeight();
-        if (grid) markClipped();
-      });
-    } catch (e) { /* no storage */ }
+  // Hide layout + grid toggle while reading; hide layout while grid off; hide
+  // grid toggle off /home.
+  function syncChromeUi() {
+    var home = isHome();
+    if (gridToggleBtn) gridToggleBtn.style.display = (home && !readerOpen) ? '' : 'none';
+    if (layoutBtn) layoutBtn.style.display = (home && !readerOpen && !gridOff && overlay) ? 'block' : 'none';
   }
 
   // ---- Reader (live thread, no reload) -------------------------------------
@@ -526,18 +548,16 @@
     if (overlay) overlay.style.display = 'none'; // reveal X's live thread underneath
     ensureBackBtn();
     backBtn.style.display = 'block';
-    if (layoutBtn) layoutBtn.style.display = 'none';
-    if (fullHeightBtn) fullHeightBtn.style.display = 'none';
+    syncChromeUi();
     spaNavigate(href);
   }
   function closeReader() {
     if (!readerOpen) return;
     readerOpen = false;
     if (backBtn) backBtn.style.display = 'none';
-    if (layoutBtn) layoutBtn.style.display = 'block';
-    if (fullHeightBtn) fullHeightBtn.style.display = 'block';
     if (!isHome()) spaNavigate(location.origin + '/home');
     if (overlay) overlay.style.display = ''; // grid (with its cards + scroll) comes right back
+    syncChromeUi();
   }
   // ---- Forwarding clone clicks to the LIVE cell ------------------------------
   // Clones are dead React, so their buttons do nothing by themselves. But the
@@ -558,6 +578,7 @@
   // fully on-screen. Repositioning is safe: item clicks keep working
   // (verified live — copy-link fired its toast after the move).
   function moveMenuNear(x, y, preExisting) {
+    if (window.innerWidth < 600) return; // mobile: leave X's menu where it lands
     var tries = 0;
     var iv = setInterval(function () {
       tries++;
@@ -604,9 +625,12 @@
     }
     var k = card.getAttribute('data-fc-id');
     var fresh = makeCard(cell, k, statusHrefOf(art) || card.getAttribute('data-fc-status'));
+    var storedCell = cardLiveCells && cardLiveCells.get(card);
     card.parentNode.replaceChild(fresh, card);
     var idx = cards.indexOf(card);
     if (idx >= 0) cards[idx] = fresh;
+    if (storedCell && cardLiveCells) cardLiveCells.set(fresh, storedCell);
+    if (menuPendingCard === card) menuPendingCard = fresh;
     markClipped();
   }
   // ---- In-card video playback -----------------------------------------------
@@ -743,12 +767,87 @@
       if (tries >= 16) { clearInterval(iv); restoring = false; loading = false; cb(null); }
     }, 200);
   }
-  // Reply (chat) icon → thread reader. Video → thread reader (a clone's <video>
-  // is dead; the thread plays it natively). Other action buttons (like, repost,
-  // bookmark, share, ⋯ caret) → forwarded to the live cell; if X already
-  // dropped that cell, fall back to the reader where everything works. Anchors
-  // open in a new tab (a clone's real href would full-navigate and kill the
-  // grid). Everything else stays inert so text selects and images copy.
+  // Re-clone a live cell into an existing card in place (feedback notices after
+  // "Not interested" etc.). No mediaReady / article requirement.
+  function replaceCardFromCell(card, cell) {
+    if (!card || !card.parentNode || !cell) return card;
+    var clone = cell.cloneNode(true);
+    clone.removeAttribute('data-testid');
+    clone.removeAttribute('style');
+    clone.className = 'fc-card';
+    clone.setAttribute('data-fc-id', card.getAttribute('data-fc-id') || '');
+    clone.setAttribute('data-fc-status', card.getAttribute('data-fc-status') || '');
+    var y = card.getAttribute('data-fc-y');
+    if (y) clone.setAttribute('data-fc-y', y);
+    eagerImgs(clone);
+    stripEmptyMedia(clone);
+    tagAvatarLayout(clone);
+    card.parentNode.replaceChild(clone, card);
+    var idx = cards.indexOf(card);
+    if (idx >= 0) cards[idx] = clone;
+    if (cardLiveCells) cardLiveCells.set(clone, cell);
+    if (menuPendingCard === card) menuPendingCard = clone;
+    return clone;
+  }
+  // Forward a clone button click to the matching live control (testid / index /
+  // text), then pin any menu near the pointer. Falls back to restoring an
+  // evicted cell, then the thread reader.
+  function forwardToLive(card, btn, mx, my) {
+    if (restoring) return; // a restore drive is mid-flight — swallow, don't race
+    var act = function (root) {
+      var target = null;
+      var t = btn.getAttribute('data-testid');
+      if (t) target = root.querySelector('[data-testid="' + t + '"]');
+      if (!target) {
+        // Share has no data-testid — map by index within the actions row.
+        var cg = btn.closest('[role="group"]');
+        var lg = root.querySelector('[role="group"]');
+        if (cg && lg) {
+          var cb = cg.querySelectorAll('button');
+          var lb = lg.querySelectorAll('button');
+          for (var i = 0; i < cb.length; i++) {
+            if (cb[i] === btn && lb[i]) { target = lb[i]; break; }
+          }
+        }
+        // Translate / Undo / "Show fewer" — match by text on the live root
+        // (article, or the stored cell for feedback cards).
+        var btnText = (btn.textContent || '').trim();
+        if (btnText) {
+          var allBtns = root.querySelectorAll('button, [role="button"]');
+          for (var j = 0; j < allBtns.length; j++) {
+            if ((allBtns[j].textContent || '').trim() === btnText) { target = allBtns[j]; break; }
+          }
+        }
+      }
+      if (!target) return;
+      // X positions menus at the live button's on-screen coords; if the
+      // background timeline has scrolled past, the menu opens off-screen
+      // (measured top:-1513). Center the live cell first, then re-pin any
+      // menu that opens to the user's mouse point.
+      target.scrollIntoView({ block: 'center' });
+      var preMenu = document.querySelector('#layers [role="menu"]');
+      forwardClick(target);
+      var liveCell = target.closest('[data-testid="cellInnerDiv"]');
+      if (liveCell && cardLiveCells) cardLiveCells.set(card, liveCell);
+      menuPendingCard = card;
+      moveMenuNear(mx, my, preMenu);
+      setTimeout(function () { refreshCard(card); }, 1500); // let X commit the state change first
+    };
+    var art = liveArticleFor(card);
+    if (art) { act(art); return; }
+    var stored = cardLiveCells && cardLiveCells.get(card);
+    if (stored && stored.isConnected) { act(stored); return; }
+    // X evicted the cell (virtualized timeline) — restore it, then act. This
+    // used to fall back to the reader, which read as "every click opens the
+    // detail page". Only a failed restore opens the reader now.
+    restoreLiveCell(card, function (art2) {
+      if (art2) setTimeout(function () { act(art2); }, 300);
+      else openReader(card.getAttribute('data-fc-status'));
+    });
+  }
+  // Reply (chat) icon → thread reader. Video → in-card play. Other action
+  // buttons (like, repost, bookmark, share, ⋯ caret) → forwardToLive. Anchors
+  // open in a new tab. Everything else stays inert so text selects and images copy.
   function onCardClick(e) {
     var card = e.target.closest ? e.target.closest('.fc-card') : null;
     if (!card) return;
@@ -771,56 +870,10 @@
     if (btn && card.contains(btn) && !btn.closest('a[href]')) {
       e.preventDefault();
       e.stopPropagation();
-      if (restoring) return; // a restore drive is mid-flight — swallow, don't queue
-      // Menu anchor = the mouse point (fall back to the clicked button's corner
-      // for synthetic clicks that carry no coords).
       var br = btn.getBoundingClientRect();
       var mx = e.clientX || Math.round(br.left);
       var my = e.clientY || Math.round(br.bottom);
-      var act = function (art) {
-        var target = null;
-        var t = btn.getAttribute('data-testid');
-        if (t) target = art.querySelector('[data-testid="' + t + '"]');
-        if (!target) {
-          // Share has no data-testid — map by index within the actions row.
-          var cg = btn.closest('[role="group"]');
-          var lg = art.querySelector('[role="group"]');
-          if (cg && lg) {
-            var cb = cg.querySelectorAll('button');
-            var lb = lg.querySelectorAll('button');
-            for (var i = 0; i < cb.length; i++) {
-              if (cb[i] === btn && lb[i]) { target = lb[i]; break; }
-            }
-          }
-          // Translate and other non-action buttons — match by text content
-          var btnText = btn.textContent.trim();
-          if (btnText) {
-            var allBtns = art.querySelectorAll('button, [role="button"], [data-testid="tweetText"]');
-            for (var i = 0; i < allBtns.length; i++) {
-              if (allBtns[i].textContent.trim() === btnText) { target = allBtns[i]; break; }
-            }
-          }
-        }
-        if (!target) return;
-        // X positions menus at the live button's on-screen coords; if the
-        // background timeline has scrolled past, the menu opens off-screen
-        // (measured top:-1513). Center the live cell first, then re-pin any
-        // menu that opens to the user's mouse point.
-        target.scrollIntoView({ block: 'center' });
-        var preMenu = document.querySelector('#layers [role="menu"]');
-        forwardClick(target);
-        moveMenuNear(mx, my, preMenu);
-        setTimeout(function () { refreshCard(card); }, 1500); // let X commit the state change first
-      };
-      var art = liveArticleFor(card);
-      if (art) { act(art); return; }
-      // X evicted the cell (virtualized timeline) — restore it, then act. This
-      // used to fall back to the reader, which read as "every click opens the
-      // detail page". Only a failed restore opens the reader now.
-      restoreLiveCell(card, function (art2) {
-        if (art2) setTimeout(function () { act(art2); }, 300);
-        else openReader(card.getAttribute('data-fc-status'));
-      });
+      forwardToLive(card, btn, mx, my);
       return;
     }
     var a = e.target.closest('a[href]');
@@ -830,6 +883,51 @@
       window.open(a.href, '_blank');
     }
   }
+  // Right-click a card (not tweet text / video / shift) → open the ⋯ caret menu
+  // at the pointer via forwardToLive.
+  function onCardContextMenu(e) {
+    if (e.shiftKey) return;
+    if (e.target.closest && e.target.closest('[data-testid="tweetText"]')) return;
+    if (e.target.closest && (e.target.closest('video') || e.target.closest('[data-testid="videoPlayer"], [data-testid="videoComponent"]'))) return;
+    var card = e.target.closest ? e.target.closest('.fc-card') : null;
+    if (!card || !grid || !grid.contains(card)) return;
+    var caretBtn = card.querySelector('[data-testid="caret"]');
+    if (!caretBtn) return;
+    e.preventDefault();
+    forwardToLive(card, caretBtn, e.clientX, e.clientY);
+  }
+  // After a layers menuitem click, watch the pending card's live cell and
+  // re-clone feedback UI (Not interested / Show fewer) into the card.
+  document.addEventListener('click', function (e) {
+    var mi = e.target.closest ? e.target.closest('#layers [role="menuitem"]') : null;
+    if (!mi) return;
+    var card = menuPendingCard;
+    if (!card || !cardLiveCells) return;
+    var liveCell = cardLiveCells.get(card);
+    if (!liveCell) return;
+    var cardId = card.getAttribute('data-fc-id');
+    var finished = false, settle = null;
+    // X swaps the cell in several steps; re-clone only once it has been quiet
+    // for 400ms, and again on later steps, until the 10s window closes.
+    var sync = function () {
+      if (!liveCell.isConnected) return;
+      var cur = card.parentNode ? card : null;
+      if (!cur && cardId) {
+        for (var i = 0; i < cards.length; i++) {
+          if (cards[i].getAttribute('data-fc-id') === cardId) { cur = cards[i]; break; }
+        }
+      }
+      if (!cur || !cur.parentNode) return;
+      card = replaceCardFromCell(cur, liveCell);
+    };
+    var obs = new MutationObserver(function () {
+      if (finished) return;
+      clearTimeout(settle);
+      settle = setTimeout(sync, 400);
+    });
+    obs.observe(liveCell, { subtree: true, childList: true, characterData: true });
+    setTimeout(function () { finished = true; obs.disconnect(); clearTimeout(settle); sync(); }, 10000);
+  }, true);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && readerOpen) closeReader(); });
 
   function mount() {
@@ -838,8 +936,10 @@
     overlay = document.createElement('div');
     overlay.id = ID;
     var bg = getComputedStyle(document.body).backgroundColor || '#fff';
+    var pad = window.innerWidth < 600 ? '0' : '8px';
+    var gap = window.innerWidth < 600 ? 4 : GAP;
     overlay.style.cssText = 'position:fixed;top:0;left:' + navWidth() + 'px;right:0;bottom:0;overflow-y:auto;' +
-      'overflow-x:hidden;z-index:9999;background:' + bg + ';padding:8px;';
+      'overflow-x:hidden;z-index:9999;background:' + bg + ';padding:' + pad + ';';
     // Mount INSIDE X's #layers portal: #layers lives in a z-index:0 ancestor
     // stacking context, so a body-level z9999 overlay always painted ABOVE the
     // menus/dialogs X portals there (share menu was unreachable). As an EARLIER
@@ -855,15 +955,15 @@
     document.documentElement.style.setProperty('--fc-bg', bg); // lightbox modal uses it too
     grid = document.createElement('div');
     grid.id = 'fc-grid';
-    grid.style.cssText = 'gap:' + GAP + 'px;';
+    grid.style.cssText = 'gap:' + gap + 'px;';
     overlay.appendChild(grid);
     (layersHost || document.body).appendChild(overlay);
     ensureLayoutBtn();
-    ensureFullHeightBtn();
-    applyFullHeight();
     layout();
+    syncChromeUi();
 
     grid.addEventListener('click', onCardClick, true); // capture: beat the clones' own link navs
+    grid.addEventListener('contextmenu', onCardContextMenu, true);
     grid.addEventListener('mouseover', onGridOver);    // hover-to-play video previews
     grid.addEventListener('mouseout', onGridOut);
 
@@ -893,9 +993,11 @@
     if (overlay) { overlay.remove(); overlay = null; grid = null; }
     if (backBtn) { backBtn.style.display = 'none'; }
     readerOpen = false;
+    menuPendingCard = null;
     seen = new Set(); firstSeen = Object.create(null); expandClicked = new WeakSet();
     incomplete = Object.create(null);
     cards = []; columnEls = []; curCols = 0; lastCount = 0; noProgress = 0;
+    syncChromeUi();
   }
 
   // ---- Typography ----------------------------------------------------------
@@ -962,26 +1064,53 @@
     } catch (e) { applyTypography(TYPO_DEFAULTS); }
   }
 
+  function applyColPrefs(res) {
+    if (!res) return;
+    xColsMobile = clampInt(res.xColsMobile, 1, 3, 1);
+    xColsTablet = clampInt(res.xColsTablet, 1, 4, 2);
+    if (res.xColsDesktop === 'auto') xColsDesktop = 'auto';
+    else xColsDesktop = clampInt(res.xColsDesktop, 1, 6, 'auto');
+  }
+  function loadGridPrefs() {
+    try {
+      chrome.storage.local.get({
+        xColsMobile: 1, xColsTablet: 2, xColsDesktop: 'auto', xGridOff: false
+      }, function (res) {
+        applyColPrefs(res);
+        gridOff = !!(res && res.xGridOff);
+        updateGridToggleBtn();
+        if (gridOff) unmount();
+        else if (grid) { layout(); markClipped(); }
+        syncChromeUi();
+      });
+    } catch (e) { /* no storage */ }
+  }
+
   try {
     if (chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener(function (changes, area) {
         if (area !== 'local') return;
         refreshTypography();
         if (changes.xLayout) loadLayoutMode();
-        if (changes.xFullHeight) loadFullHeight();
+        if (changes.xColsMobile || changes.xColsTablet || changes.xColsDesktop || changes.xGridOff) {
+          loadGridPrefs();
+        }
       });
     }
   } catch (e) { /* no storage access */ }
   refreshTypography();
   loadLayoutMode();
-  loadFullHeight();
+  loadGridPrefs();
 
   // ---- Promoted-tweet removal (both grid and normal mode) ----
+  // Only strip ads: article with User-Name and no <time>. Keep feedback notices.
   function stripPromotedCells() {
     var cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
     for (var i = cells.length - 1; i >= 0; i--) {
       var art = cells[i].querySelector('article');
-      if (art && !art.querySelector('time')) cells[i].remove();
+      if (art && art.querySelector('[data-testid="User-Name"]') && !art.querySelector('time')) {
+        cells[i].remove();
+      }
     }
   }
   stripPromotedCells();
@@ -991,15 +1120,23 @@
   window.addEventListener('resize', layout);
   setInterval(function () {
     if (!isHome()) {
+      syncChromeUi();
       if (readerOpen) return; // reader drove the background page to a thread — keep the grid mounted (hidden)
       unmount();
       return;
     }
+    ensureGridToggleBtn();
+    syncChromeUi();
     if (readerOpen) return;  // reading a thread that lives at /home? never; guard anyway
+    if (gridOff) {
+      if (overlay) unmount();
+      return; // ad strip keeps running via adMo; no mount/layout/schedule/loader
+    }
     if (!document.querySelector('[data-testid="cellInnerDiv"]')) return;
     mount();
     layout();
     schedule();
+    syncChromeUi();
     // Loader: fill until the grid is scrollable AND keep feeding while the user
     // sits near the grid's bottom (a scroll event can't fire once scrollTop is
     // pinned at max, so the scroll handler alone starves there — verified live).

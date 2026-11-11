@@ -52,11 +52,11 @@ html.fc-home [data-testid="primaryColumn"] {
   background: #1a8cd8;
 }
 
-/* Floating grid toggles (shown while the grid is up, hidden while reading).
-   Stacked top-right so they never overlap. */
-#fc-layout,
-#fc-fullheight {
+/* Floating layout toggle (shown while the grid is up, hidden while reading /
+   grid-off). Grid on/off uses #fc-gridtoggle styled inline by the script. */
+#fc-layout {
   position: fixed;
+  top: 16px;
   right: 16px;
   z-index: 10001;
   padding: 8px 14px;
@@ -68,18 +68,8 @@ html.fc-home [data-testid="primaryColumn"] {
   cursor: pointer;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
-#fc-layout { top: 16px; }
-#fc-fullheight { top: 56px; }
-#fc-layout:hover,
-#fc-fullheight:hover {
+#fc-layout:hover {
   background: #1a8cd8;
-}
-
-/* Full-height mode: cards grow to fit their content instead of the 600px clip,
-   capped at 100vh so a very long post can't run off forever (it inline-scrolls
-   only past one viewport). No child scroll for anything shorter than 100vh. */
-#fc-masonry.fc-full #fc-grid .fc-card {
-  max-height: 100vh;
 }
 
 /* Rows/table mode: CSS grid (set inline by the script). Cards align at the top
@@ -108,16 +98,17 @@ html.fc-home [data-testid="primaryColumn"] {
   border: 1px solid rgba(128, 128, 128, 0.25);
   border-radius: 14px;
   overflow: hidden;
-  /* Cap very tall posts so one long article can't dominate a column; the rest is
-     read by scrolling inside the card (see .fc-clipped below). */
-  max-height: 600px;
+  /* Cards always grow to content — no height cap, no inner scrollbar. */
+  max-height: none;
   /* The card is NOT a button: text selects/copies, images right-click save.
      Only the reply (chat) icon opens the thread reader. */
   cursor: auto;
   user-select: text;
+  -webkit-touch-callout: none;
 }
 #fc-grid .fc-card [data-testid="tweetText"] {
   cursor: text;
+  -webkit-touch-callout: default;
 }
 /* Action buttons (reply/like/repost/bookmark/share/⋯) forward to the live cell
    — they are real click targets, so show a pointer. */
@@ -225,4 +216,23 @@ html.fc-home [data-testid="primaryColumn"] {
 #fc-grid .fc-card .fc-content .fc-hdr {
   margin-left: 52px !important;
   min-height: 40px !important;
+}
+
+/* Mobile: flush cards, tighter column gap, keep avatar overlay + hdr indent. */
+@media (max-width: 599px) {
+  #fc-grid .fc-col {
+    gap: 4px;
+  }
+  #fc-grid .fc-card {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  #fc-grid .fc-card article {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  #fc-grid .fc-card .fc-content .fc-hdr {
+    margin-left: 48px !important;
+  }
 }

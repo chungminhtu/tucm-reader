@@ -169,6 +169,30 @@ function setTypographyControlsEnabled(enabled: boolean): void {
   })
 }
 
+// X masonry column count per screen bucket (read by public/x-masonry.js:
+// innerWidth < 600 = mobile, 600..1200 = tablet, > 1200 = desktop).
+const X_COLS = [
+  { key: 'xColsMobile', label: 'Mobile', range: '<600px', options: ['1', '2', '3'], def: '1' },
+  { key: 'xColsTablet', label: 'Tablet', range: '600-1200px', options: ['1', '2', '3', '4'], def: '2' },
+  { key: 'xColsDesktop', label: 'Desktop', range: '>1200px', options: ['auto', '1', '2', '3', '4', '5', '6'], def: 'auto' },
+]
+
+function initXCols(): void {
+  if (!isStorageAvailable()) return
+  const defaults: Record<string, unknown> = {}
+  X_COLS.forEach((c) => { defaults[c.key] = c.key === 'xColsDesktop' ? 'auto' : Number(c.def) })
+  chrome.storage.local.get(defaults, (res) => {
+    X_COLS.forEach((c) => {
+      const sel = document.querySelector(`select[data-xcols="${c.key}"]`) as HTMLSelectElement | null
+      if (!sel) return
+      sel.value = String(res[c.key] ?? c.def)
+      sel.addEventListener('change', () => {
+        chrome.storage.local.set({ [c.key]: sel.value === 'auto' ? 'auto' : Number(sel.value) })
+      })
+    })
+  })
+}
+
 async function initPopup() {
   let settings: FontSettings
   try {
@@ -254,12 +278,21 @@ async function initPopup() {
           ${createControlRow('Letter Spacing', settings.letterSpacing, -2, 5, 0.5, (v) => `${v}px`)}
         </section>
       </div>
+      <section class="layout-column x-cols-section">
+        <h2 class="section-title">X grid columns</h2>
+        ${X_COLS.map((c) => `
+          <div class="control-group">
+            <label>${c.label} (${c.range})</label>
+            <select data-xcols="${c.key}">${c.options.map((o) => `<option value="${o}">${o === 'auto' ? 'Auto' : o}</option>`).join('')}</select>
+          </div>`).join('')}
+      </section>
     </div>
   `
 
   document.querySelector('#app')!.innerHTML = html
 
   setTypographyControlsEnabled(settings.features.typography)
+  initXCols()
 
   const allowDomainButton = document.getElementById('allow-domain-btn') as HTMLButtonElement | null
   if (allowDomainButton && currentHost && !domainAllowed) {
