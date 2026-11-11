@@ -215,6 +215,20 @@ async function main() {
     record('c', ok && r.hidden === '1' && r.reason === 'label', r);
   }
 
+  // live: the real ad cell captured (read-only) from x.com on 2026-11-11
+  // (status page, label "Quảng cáo" = leaf SPAN outside User-Name, no <time>, under placementTracking).
+  {
+    const live = fs.readFileSync(new URL('./fixtures/live-ad-cell.html', import.meta.url), 'utf8');
+    await page.evaluate((html) => {
+      const w = document.createElement('div'); w.innerHTML = html;
+      const cell = w.firstElementChild; cell.id = 'c-live';
+      document.getElementById('react-root').appendChild(cell);
+    }, live);
+    const ok = await page.waitForFunction(() => { const c = document.getElementById('c-live'); return c && c.getAttribute('data-xab-hidden') === '1'; }, null, { timeout: 2500 }).then(() => true).catch(() => false);
+    const r = await page.evaluate(() => { const c = document.getElementById('c-live'); return { hidden: c.getAttribute('data-xab-hidden'), reason: c.getAttribute('data-xab-reason'), visible: c.getBoundingClientRect().height > 0 }; });
+    record('live', ok && r.reason === 'label' && !r.visible, r);
+  }
+
   const videoPath = await page.video()?.path();
   await context.close();
   await browser.close();

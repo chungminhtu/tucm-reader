@@ -3,7 +3,7 @@
 (() => {
   'use strict';
   // Only families that ship the Google Fonts "vietnamese" subset (checked 2026-11-11).
-  const FONTS = ['Lexend Deca', 'Plus Jakarta Sans', 'Manrope', 'Tilt Neon', 'Alata', 'Zalando Sans', 'Geologica', 'Readex Pro'];
+  const FONTS = ['Lexend Deca', 'Plus Jakarta Sans', 'Manrope', 'Tilt Neon', 'Alata', 'Zalando Sans', 'Geologica', 'Readex Pro', 'Literata', 'Bookerly'];
   const DEF = { fontFamily: 'Lexend Deca', fontSize: 16, fontWeight: 400, lineHeight: 1.5, xColsMobile: 1, xColsTablet: 2, xColsDesktop: 'auto' };
   const vi = /^vi/i.test((document.documentElement && document.documentElement.lang) || navigator.language || '');
   const T = vi
@@ -82,7 +82,19 @@
     });
     fab.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
     close.addEventListener('click', () => { panel.style.display = 'none'; });
-    panel.append(row(T.font, sel), row(T.size, size, sizeV), row(T.weight, wt), row(T.lh, lh, lhV), row(T.cols, cols), close);
+    // Status line: shows whether the chosen font really loaded (evidence on phones).
+    const fst = el('div', { id: 'xab-font-status' });
+    fst.style.cssText = 'font:11px system-ui,sans-serif;color:#8b98a5;margin:2px 0 4px;word-break:break-word';
+    const showStatus = () => {
+      const f = chrome.fontStatus;
+      if (!f) { fst.textContent = ''; return; }
+      const fam = decodeURIComponent((/family=([^&:]+)/.exec(f.url) || [])[1] || '').replace(/\+/g, ' ');
+      fst.textContent = f.ok ? (vi ? 'Đã tải phông: ' : 'Font loaded: ') + fam : (vi ? 'Lỗi tải phông ' : 'Font load error ') + fam + ': ' + f.error;
+      fst.style.color = f.ok ? '#00ba7c' : '#f4212e';
+    };
+    window.addEventListener('xab-font-status', showStatus);
+    showStatus();
+    panel.append(row(T.font, sel), fst, row(T.size, size, sizeV), row(T.weight, wt), row(T.lh, lh, lhV), row(T.cols, cols), close);
     document.body.append(fab, panel);
     if (typeof GM_registerMenuCommand === 'function') {
       try { GM_registerMenuCommand(T.title, () => { panel.style.display = 'block'; }); } catch (_) {}

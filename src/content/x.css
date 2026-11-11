@@ -236,3 +236,23 @@ html.fc-home [data-testid="primaryColumn"] {
     margin-left: 48px !important;
   }
 }
+
+/* Quote with condensed media: X lays it out as a row [testCondensedMedia thumb | text]
+   sized for its ~550px column. In a narrow grid card (measured live: 204px card,
+   2 mobile columns) that leaves a tall, empty thumbnail column and squeezes the
+   quote text to ~115px. Stack it there: thumbnail on top, text full width below.
+   Wide cards (measured 490px desktop) keep X's own row — stacking made a 454px thumb. */
+#fc-grid .fc-card {
+  container-type: inline-size;
+}
+@container (max-width: 319px) {
+  #fc-grid .fc-card div:has(> [data-testid="testCondensedMedia"]) {
+    flex-direction: column !important;
+  }
+  #fc-grid .fc-card div:has(> [data-testid="testCondensedMedia"]) > * {
+    width: 100% !important;
+    flex-basis: auto !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+}

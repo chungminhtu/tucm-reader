@@ -38,5 +38,7 @@ export const FONTS = [
   'Zalando Sans',
   'Geologica',
   'Readex Pro',
+  'Literata',
+  'Bookerly',
 ]
 

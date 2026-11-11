@@ -1014,6 +1014,10 @@
     features: { typography: true },
   };
 
+  // Bookerly is Amazon's own font (not on Google Fonts): use it when the device
+  // has it installed, otherwise the closest open serif, Literata (has Vietnamese).
+  var FONT_ALIAS = { 'Bookerly': 'Literata' };
+
   function loadFontLink(family) {
     var id = 'fc-x-font';
     var url = 'https://fonts.googleapis.com/css2?family=' +
@@ -1042,8 +1046,9 @@
       (document.head || document.documentElement).appendChild(style);
     }
     if (!on) { style.textContent = ''; return; }
-    loadFontLink(s.fontFamily);
-    var fam = "'" + s.fontFamily + "', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    var alias = FONT_ALIAS[s.fontFamily];
+    loadFontLink(alias || s.fontFamily);
+    var fam = "'" + s.fontFamily + "', " + (alias ? "'" + alias + "', " : '') + "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
     var textSel = '[data-testid="tweetText"], [data-testid="tweetText"] *, ' +
       '#fc-grid .fc-card [data-testid="tweetText"], #fc-grid .fc-card [data-testid="tweetText"] *';
     style.textContent =

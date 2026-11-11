@@ -26,6 +26,9 @@ const FONT_MAP: Record<string, string> = {
   'Zalando Sans': 'Zalando+Sans:wght@200..900',
   'Geologica': 'Geologica:wght@100..900',
   'Readex Pro': 'Readex+Pro:wght@160..700',
+  'Literata': 'Literata:wght@200..900',
+  // Bookerly is Amazon-only (not on Google Fonts): load Literata as the fallback.
+  'Bookerly': 'Literata:wght@200..900',
 };
 
 const COMMENT_EXPANSION_TEXTS = ['more replies', 'view more comments', 'continue this thread'];
@@ -228,10 +231,10 @@ function applyTypography(settings: FontSettings): void {
   // Only apply font-family, no other typography modifications
   const css = `
     body {
-      font-family: '${settings.fontFamily}', sans-serif !important;
+      font-family: '${settings.fontFamily}'${settings.fontFamily === 'Bookerly' ? ", 'Literata'" : ''}, sans-serif !important;
     }
     body *${iconExclusions} {
-      font-family: '${settings.fontFamily}', sans-serif !important;
+      font-family: '${settings.fontFamily}'${settings.fontFamily === 'Bookerly' ? ", 'Literata'" : ''}, sans-serif !important;
     }
   `;
   

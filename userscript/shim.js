@@ -73,7 +73,9 @@ const chrome = (() => {
       getManifest: () => ({ version: 'userscript' }),
       sendMessage(msg, cb) {
         const done = (r) => { try { cb && cb(r); } catch (_) {} };
-        if (msg && msg.type === 'FETCH_FONT_CSS') fontCss(msg.fontUrl).then((css) => done({ success: true, css }), (e) => done({ success: false, error: String(e.message) }));
+        // Font load result is kept for the Aa panel status line (evidence on phones, no console there).
+        const fontStatus = (st) => { api.fontStatus = st; try { window.dispatchEvent(new CustomEvent('xab-font-status')); } catch (_) {} };
+        if (msg && msg.type === 'FETCH_FONT_CSS') fontCss(msg.fontUrl).then((css) => { fontStatus({ url: msg.fontUrl, ok: true, size: css.length }); done({ success: true, css }); }, (e) => { fontStatus({ url: msg.fontUrl, ok: false, error: String(e.message) }); done({ success: false, error: String(e.message) }); });
         else if (msg && msg.type === 'FC_TWEET_JSON') tweetJson(String(msg.id)).then((tweet) => done({ success: true, tweet }), (e) => done({ success: false, error: String(e.message) }));
         else done({ success: false, error: 'unknown message' });
       },

@@ -27,6 +27,8 @@ Userscript-only glue: `userscript/shim.js` (chrome.* → GM_*), `userscript/pane
 2. `npm run build` AND `python3 userscript/build.py` (commit `userscript/dist/x-masonry.user.js`).
 3. Run BOTH test suites (headless, real-time video): `node test/run-adblock.mjs`,
    `node test/run-masonry-mobile.mjs`, `node test/run-masonry-devices.mjs`.
+   When X itself is involved, also `node test/live-x.mjs` (real x.com, READ-ONLY, logged-in
+   test profile `~/.cache/tucm-x-profile`; never click X controls or post).
 4. Commit + push.
 
 NEVER edit a copy of this code anywhere else (the old copy in

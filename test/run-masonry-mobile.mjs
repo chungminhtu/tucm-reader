@@ -92,12 +92,29 @@ await page.selectOption('#xab-cols', '2');
 await page.waitForFunction(() => document.querySelectorAll('#fc-grid .fc-col').length === 2, null, { timeout: 5000 }).catch(() => {});
 res.afterCols = { cols: await page.evaluate(() => document.querySelectorAll('#fc-grid .fc-col').length) };
 await page.screenshot({ path: path.join(out, 'masonry-2.png') });
+// Bookerly: Amazon-only font -> stack 'Bookerly','Literata', loads Literata (has Vietnamese); panel shows the load status.
+await page.selectOption('#xab-font', 'Bookerly');
+await page.waitForFunction(() => /Literata/.test((document.getElementById('fc-x-font') || {}).textContent || ''), null, { timeout: 20000 }).catch(() => {});
+await page.waitForTimeout(500);
+res.bookerly = await page.evaluate(() => {
+  const t = document.querySelector('#fc-grid .fc-card [data-testid="tweetText"]');
+  return { stack: getComputedStyle(t).fontFamily, literataCss: /Literata/.test((document.getElementById('fc-x-font') || {}).textContent || ''),
+    literataVi: document.fonts.check('16px "Literata"', 'Được ẩn ơ ư ế ộ ữ'), status: (document.getElementById('xab-font-status') || {}).textContent || '' };
+});
+await page.screenshot({ path: path.join(out, 'masonry-bookerly.png') });
+// Quote with condensed media (real card saved from live x.com): the [thumb | text] row must stack in a grid card.
+res.condensed = await page.evaluate((html) => {
+  const col = document.querySelector('#fc-grid .fc-col'); col.insertAdjacentHTML('afterbegin', html);
+  const m = col.firstElementChild.querySelector('[data-testid="testCondensedMedia"]');
+  return { rowDir: m && getComputedStyle(m.parentElement).flexDirection };
+}, fs.readFileSync(path.join(root, 'test/fixtures/live-quote-compact-card.html'), 'utf8'));
 res.errors = csp;
 const v = page.video(); await ctx.close(); await browser.close();
 console.log(JSON.stringify(res, null, 1));
 const d = res.default;
 const pass = d.masonry && d.htmlClass.includes('fc-home') && d.cols === 1 && d.cards >= 3 && !d.adInGrid && d.fam === 'Lexend Deca' && d.size === '16px' && d.viFont &&
   res.afterSize.size === '20px' && res.errors.length === 0 && d.leftGapCardToText !== null && d.leftGapCardToText <= 24 &&
-  d.noFullHeight && d.hasGridToggle && d.cardsNoInnerScroll && d.overlayPadL === '0px' && res.afterCols.cols === 2;
+  d.noFullHeight && d.hasGridToggle && d.cardsNoInnerScroll && d.overlayPadL === '0px' && res.afterCols.cols === 2 &&
+  /^"?Bookerly"?, "?Literata/.test(res.bookerly.stack) && res.bookerly.literataCss && /Literata/.test(res.bookerly.status) && res.condensed.rowDir === 'column';
 console.log('Video:', await v.path(), '\nẢnh:', path.join(out, 'masonry-1.png'), path.join(out, 'masonry-2.png'));
 console.log(pass ? 'PASS' : 'FAIL'); process.exit(pass ? 0 : 1);
