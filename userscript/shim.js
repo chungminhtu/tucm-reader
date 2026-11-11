@@ -9,11 +9,15 @@ const chrome = (() => {
   function sset(k, v) { try { if (hasGM) GM_setValue(k, v); else localStorage.setItem(k, v); } catch (_) {} }
   function readStore() { try { return JSON.parse(sget(STORE) || '{}'); } catch (_) { return {}; } }
 
-  function gm(url, type) {
+  // Google Fonts picks the CSS by User-Agent. Edge Android ("EdgA") gets one TrueType
+  // block with no /* subset */ comments, so ask as desktop Chrome to get woff2 subsets.
+  const FONT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const MIME = { woff2: 'font/woff2', woff: 'font/woff', truetype: 'font/ttf', opentype: 'font/otf' };
+  function gm(url, type, headers) {
     return new Promise((res, rej) => {
       if (typeof GM_xmlhttpRequest !== 'function') return rej(new Error('no GM_xmlhttpRequest'));
       GM_xmlhttpRequest({
-        method: 'GET', url, responseType: type, timeout: 20000,
+        method: 'GET', url, responseType: type, timeout: 20000, headers: headers || {},
         onload: (r) => (r.status >= 200 && r.status < 300 ? res(r.response) : rej(new Error('HTTP ' + r.status))),
         onerror: () => rej(new Error('network')), ontimeout: () => rej(new Error('timeout')),
       });
@@ -29,13 +33,21 @@ const chrome = (() => {
   async function fontCss(fontUrl) {
     const cached = sget(FONT_CACHE + fontUrl);
     if (cached) return cached;
-    const css = await gm(fontUrl, 'text');
+    const css = await gm(fontUrl, 'text', { 'User-Agent': FONT_UA });
+    async function inline(block) {
+      const u = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)\s*format\('(\w+)'\)/.exec(block);
+      if (!u) return null;
+      return block.replace(u[1], 'data:' + (MIME[u[2]] || 'font/woff2') + ';base64,' + b64(await gm(u[1], 'arraybuffer')));
+    }
     const re = /\/\*\s*([\w-]+)\s*\*\/\s*(@font-face\s*\{[^}]*\})/g; let m; const out = [];
     while ((m = re.exec(css))) {
       if (!KEEP[m[1]]) continue;
-      const u = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/.exec(m[2]);
-      if (!u) continue;
-      out.push(m[2].replace(u[1], 'data:font/woff2;base64,' + b64(await gm(u[1], 'arraybuffer'))));
+      const b = await inline(m[2]); if (b) out.push(b);
+    }
+    // Fallback: the UA header was not applied and Google sent whole-font blocks (no subsets).
+    if (!out.length) {
+      const all = css.match(/@font-face\s*\{[^}]*\}/g) || [];
+      for (const blk of all) { const b = await inline(blk); if (b) out.push(b); }
     }
     if (!out.length) throw new Error('no font blocks');
     const res = out.join('\n');
