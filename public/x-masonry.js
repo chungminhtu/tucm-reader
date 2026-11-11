@@ -497,7 +497,6 @@
     gridToggleBtn.id = 'fc-gridtoggle';
     gridToggleBtn.type = 'button';
     gridToggleBtn.title = 'Grid on/off';
-    gridToggleBtn.style.cssText = 'position:fixed;right:40px;bottom:62px;z-index:2147483000;width:28px;height:28px;padding:0;border-radius:50%;border:none;background:#1d9bf0;color:#fff;opacity:.55;font:700 14px system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.3)';
     gridToggleBtn.addEventListener('click', function () {
       gridOff = !gridOff;
       try { chrome.storage.local.set({ xGridOff: gridOff }); } catch (e) { /* no storage */ }

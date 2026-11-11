@@ -41,9 +41,8 @@
     if (document.getElementById('xab-panel')) return;
     const st = Object.assign({}, s);
     const fab = el('button', { id: 'xab-fab', textContent: 'Aa', title: T.title, type: 'button' });
-    fab.style.cssText = 'position:fixed;right:6px;bottom:62px;z-index:2147483000;width:28px;height:28px;padding:0;border-radius:50%;border:none;background:#1d9bf0;color:#fff;opacity:.55;font:700 11px system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.3)';
     const panel = el('div', { id: 'xab-panel' });
-    panel.style.cssText = 'position:fixed;right:6px;bottom:96px;z-index:2147483000;width:min(250px,calc(100vw - 12px));padding:8px;border-radius:12px;background:#16181c;border:1px solid #2f3336;box-shadow:0 4px 20px rgba(0,0,0,.5);display:none';
+    panel.style.cssText = 'position:fixed;right:12px;bottom:106px;z-index:2147483000;width:min(250px,calc(100vw - 12px));padding:8px;border-radius:12px;background:#16181c;border:1px solid #2f3336;box-shadow:0 4px 20px rgba(0,0,0,.5);display:none';
     const fieldCss = 'padding:6px;border-radius:6px;background:#000;color:#fff;border:1px solid #536471;font-size:14px';
     const sel = el('select', { id: 'xab-font' }); sel.style.cssText = fieldCss;
     FONTS.forEach((f) => sel.appendChild(el('option', { value: f, textContent: f })));
