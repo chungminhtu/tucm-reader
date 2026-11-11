@@ -3,7 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const DIR = '/private/tmp/claude-501/-Volumes-DATA-TUCM-FontChanger-TUCM-ChromeExtension/2469f2b4-7a4a-4336-bfc1-25bb70ea0877/scratchpad';
-const REAL_CSS = '/Volumes/DATA/TUCM/FontChanger_TUCM_ChromeExtension/src/content/x.css';
+const REAL_CSS = '/Volumes/DATA/TUCM/tucm-reader/src/content/x.css';
 
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];

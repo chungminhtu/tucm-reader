@@ -360,7 +360,8 @@
       var cell = cells[i];
       var art = cell.querySelector('article');
       if (!art) continue;
-      if (!art.querySelector('time')) continue; // skip promoted/ads (no timestamp)
+      if (cell.hasAttribute('data-xab-hidden') || cell.querySelector('[data-xab-hidden]')) continue;
+      if (!art.querySelector('time')) continue;
       var k = keyOf(art);
       if (!k) continue;
       if (seen.has(k)) {
@@ -1102,21 +1103,6 @@
   loadLayoutMode();
   loadGridPrefs();
 
-  // ---- Promoted-tweet removal (both grid and normal mode) ----
-  // Only strip ads: article with User-Name and no <time>. Keep feedback notices.
-  function stripPromotedCells() {
-    var cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
-    for (var i = cells.length - 1; i >= 0; i--) {
-      var art = cells[i].querySelector('article');
-      if (art && art.querySelector('[data-testid="User-Name"]') && !art.querySelector('time')) {
-        cells[i].remove();
-      }
-    }
-  }
-  stripPromotedCells();
-  var adMo = new MutationObserver(function () { stripPromotedCells(); });
-  if (document.body) adMo.observe(document.body, { childList: true, subtree: true });
-
   window.addEventListener('resize', layout);
   setInterval(function () {
     if (!isHome()) {
@@ -1130,7 +1116,7 @@
     if (readerOpen) return;  // reading a thread that lives at /home? never; guard anyway
     if (gridOff) {
       if (overlay) unmount();
-      return; // ad strip keeps running via adMo; no mount/layout/schedule/loader
+      return; // no mount/layout/schedule/loader while grid off
     }
     if (!document.querySelector('[data-testid="cellInnerDiv"]')) return;
     mount();

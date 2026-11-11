@@ -1,0 +1,1562 @@
+// ==UserScript==
+// @name         TUCM Reader (X)
+// @name:vi      TUCM Reader (X)
+// @namespace    x-adblock-edge
+// @version      2026.1111.2052
+// @description  TUCM Reader for x.com: masonry grid, per-device columns, fonts, and ad hiding (EN/VI). Network: Google Fonts + syndication.twimg.com only.
+// @match        https://x.com/*
+// @match        https://twitter.com/*
+// @run-at       document-start
+// @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @connect      fonts.googleapis.com
+// @connect      fonts.gstatic.com
+// @connect      cdn.syndication.twimg.com
+// @noframes
+// @downloadURL  http://minhtu-m5max-64gb.netbird.selfhosted:7445/x-masonry.user.js
+// @updateURL    http://minhtu-m5max-64gb.netbird.selfhosted:7445/x-masonry.user.js
+// ==/UserScript==
+/* public/x-adblock.js \u2014 shared X ad hider (extension + userscript) */
+(function () {
+  'use strict';
+  if (window.__xabAdblock) return;
+
+  var LABELS = {
+    'promoted': 1,
+    'ad': 1,
+    'ads': 1,
+    'sponsored': 1,
+    'qu\u1ea3ng c\u00e1o': 1,
+    '\u0111\u01b0\u1ee3c qu\u1ea3ng b\u00e1': 1,
+    '\u0111\u01b0\u1ee3c t\u00e0i tr\u1ee3': 1
+  };
+  var PREFIXES = [
+    'promoted by',
+    '\u0111\u01b0\u1ee3c qu\u1ea3ng b\u00e1 b\u1edfi',
+    'qu\u1ea3ng c\u00e1o b\u1edfi'
+  ];
+
+  var queue = [];
+  var queued = new Set();
+  var rafPending = false;
+  var styleInjected = false;
+
+  function normalize(s) {
+    return String(s || '')
+      .normalize('NFC')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+  }
+
+  function ensureStyle() {
+    if (styleInjected) return;
+    var css = '[data-xab-hidden]{display:none !important}';
+    var root = document.documentElement || document.head || document.body;
+    if (!root) return;
+    var el = document.createElement('style');
+    el.textContent = css;
+    (document.head || document.documentElement || document.body).appendChild(el);
+    styleInjected = true;
+  }
+
+  function directText(el) {
+    var parts = [];
+    var nodes = el.childNodes;
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].nodeType === 3) parts.push(nodes[i].nodeValue || '');
+    }
+    return normalize(parts.join(''));
+  }
+
+  function isLabelText(t) {
+    if (!t) return false;
+    if (LABELS[t]) return true;
+    for (var i = 0; i < PREFIXES.length; i++) {
+      if (t.indexOf(PREFIXES[i]) === 0) return true;
+    }
+    return false;
+  }
+
+  function shouldSkip(el) {
+    if (el.closest('[data-testid="tweetText"]')) return true;
+    if (el.closest('[contenteditable="true"]')) return true;
+    if (el.closest('[data-testid="UserName"]')) return true;
+    var a = el.closest('a[href]');
+    if (a && a.closest('[data-testid="User-Name"]')) return true;
+    return false;
+  }
+
+  function hideContainer(from, reason) {
+    var node = from;
+    while (node && node !== document && node !== document.documentElement) {
+      if (node.classList && node.classList.contains('fc-card')) {
+        node.setAttribute('data-xab-hidden', '1');
+        node.setAttribute('data-xab-reason', reason);
+        return;
+      }
+      node = node.parentElement;
+    }
+    node = from;
+    while (node && node !== document && node !== document.documentElement) {
+      if (node.getAttribute && node.getAttribute('data-testid') === 'cellInnerDiv') {
+        node.setAttribute('data-xab-hidden', '1');
+        node.setAttribute('data-xab-reason', reason);
+        return;
+      }
+      node = node.parentElement;
+    }
+    node = from;
+    while (node && node !== document && node !== document.documentElement) {
+      if (node.tagName === 'ARTICLE') {
+        node.setAttribute('data-xab-hidden', '1');
+        node.setAttribute('data-xab-reason', reason);
+        return;
+      }
+      node = node.parentElement;
+    }
+  }
+
+  function scanElement(el) {
+    if (!el || el.nodeType !== 1) return;
+    if (el.hasAttribute && el.hasAttribute('data-xab-hidden')) return;
+    if (!shouldSkip(el) && isLabelText(directText(el))) {
+      ensureStyle();
+      hideContainer(el, 'label');
+      return;
+    }
+    var kids = el.children;
+    if (!kids) return;
+    for (var i = 0; i < kids.length; i++) scanElement(kids[i]);
+  }
+
+  function checkNoTime(cell) {
+    if (!cell || cell.nodeType !== 1) return;
+    if (cell.hasAttribute('data-xab-hidden')) return;
+    var art = cell.querySelector('article');
+    if (!art) return;
+    if (art.querySelector('[data-testid="User-Name"]') && !art.querySelector('time')) {
+      ensureStyle();
+      cell.setAttribute('data-xab-hidden', '1');
+      cell.setAttribute('data-xab-reason', 'notime');
+    }
+  }
+
+  function processNode(node) {
+    if (!node) return;
+    if (node.nodeType === 3) {
+      var p = node.parentElement;
+      if (p) scanElement(p);
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    scanElement(node);
+    if (node.getAttribute && node.getAttribute('data-testid') === 'cellInnerDiv') {
+      checkNoTime(node);
+    } else {
+      var cells = node.querySelectorAll ? node.querySelectorAll('[data-testid="cellInnerDiv"]') : [];
+      for (var i = 0; i < cells.length; i++) checkNoTime(cells[i]);
+    }
+  }
+
+  function flush() {
+    rafPending = false;
+    var batch = queue;
+    queue = [];
+    queued.clear();
+    for (var i = 0; i < batch.length; i++) processNode(batch[i]);
+  }
+
+  function enqueue(node) {
+    if (!node) return;
+    if (queued.has(node)) return;
+    queued.add(node);
+    queue.push(node);
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(flush);
+    }
+  }
+
+  function sweep() {
+    ensureStyle();
+    var cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
+    for (var i = 0; i < cells.length; i++) {
+      scanElement(cells[i]);
+      checkNoTime(cells[i]);
+    }
+    var cards = document.querySelectorAll('#fc-grid .fc-card');
+    for (var j = 0; j < cards.length; j++) {
+      scanElement(cards[j]);
+    }
+  }
+
+  function onMutations(muts) {
+    for (var i = 0; i < muts.length; i++) {
+      var m = muts[i];
+      if (m.type === 'characterData') {
+        enqueue(m.target && m.target.parentElement ? m.target.parentElement : m.target);
+        continue;
+      }
+      if (m.type === 'childList') {
+        var added = m.addedNodes;
+        for (var j = 0; j < added.length; j++) enqueue(added[j]);
+        if (m.target) enqueue(m.target);
+      }
+    }
+  }
+
+  function start() {
+    ensureStyle();
+    var root = document.documentElement || document;
+    try {
+      var mo = new MutationObserver(onMutations);
+      mo.observe(root, { childList: true, subtree: true, characterData: true });
+    } catch (e) { /* ignore */ }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', sweep);
+    } else {
+      sweep();
+    }
+    setInterval(sweep, 1000);
+  }
+
+  window.__xabAdblock = { sweep: sweep, version: 1 };
+  start();
+})();
+(() => {
+  'use strict';
+// Adapter: gives the unmodified FontChanger x-masonry.js the few chrome.* APIs it calls,
+// backed by GM_* (or localStorage) and GM_xmlhttpRequest. This is a port of src/background.ts.
+const chrome = (() => {
+  const STORE = 'xab-chrome-store-v1';
+  const FONT_CACHE = 'xab-fontcss-v1:';
+  const KEEP = { latin: 1, 'latin-ext': 1, vietnamese: 1 };
+  const hasGM = typeof GM_getValue === 'function' && typeof GM_setValue === 'function';
+  function sget(k) { try { if (hasGM) { const v = GM_getValue(k, null); return v == null ? null : v; } return localStorage.getItem(k); } catch (_) { return null; } }
+  function sset(k, v) { try { if (hasGM) GM_setValue(k, v); else localStorage.setItem(k, v); } catch (_) {} }
+  function readStore() { try { return JSON.parse(sget(STORE) || '{}'); } catch (_) { return {}; } }
+
+  function gm(url, type) {
+    return new Promise((res, rej) => {
+      if (typeof GM_xmlhttpRequest !== 'function') return rej(new Error('no GM_xmlhttpRequest'));
+      GM_xmlhttpRequest({
+        method: 'GET', url, responseType: type, timeout: 20000,
+        onload: (r) => (r.status >= 200 && r.status < 300 ? res(r.response) : rej(new Error('HTTP ' + r.status))),
+        onerror: () => rej(new Error('network')), ontimeout: () => rej(new Error('timeout')),
+      });
+    });
+  }
+  function b64(buf) {
+    const a = new Uint8Array(buf); let out = '';
+    for (let i = 0; i < a.length; i += 0x8000) out += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000));
+    return btoa(out);
+  }
+  // FETCH_FONT_CSS: Google Fonts CSS -> woff2 inlined as data: URIs (x.com CSP font-src allows data:).
+  // Only latin, latin-ext and vietnamese subsets are kept (keeps Vietnamese diacritics, small size).
+  async function fontCss(fontUrl) {
+    const cached = sget(FONT_CACHE + fontUrl);
+    if (cached) return cached;
+    const css = await gm(fontUrl, 'text');
+    const re = /\/\*\s*([\w-]+)\s*\*\/\s*(@font-face\s*\{[^}]*\})/g; let m; const out = [];
+    while ((m = re.exec(css))) {
+      if (!KEEP[m[1]]) continue;
+      const u = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/.exec(m[2]);
+      if (!u) continue;
+      out.push(m[2].replace(u[1], 'data:font/woff2;base64,' + b64(await gm(u[1], 'arraybuffer'))));
+    }
+    if (!out.length) throw new Error('no font blocks');
+    const res = out.join('\n');
+    sset(FONT_CACHE + fontUrl, res);
+    return res;
+  }
+  // FC_TWEET_JSON: public syndication JSON for in-card video (same URL/token as background.ts).
+  async function tweetJson(id) {
+    if (!/^\d+$/.test(id)) throw new Error('bad id');
+    const token = ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '');
+    return JSON.parse(await gm('https://cdn.syndication.twimg.com/tweet-result?id=' + id + '&token=' + token + '&lang=en', 'text'));
+  }
+
+  const listeners = [];
+  const api = {
+    storage: {
+      local: {
+        get(defaults, cb) {
+          const st = readStore();
+          const out = Object.assign({}, defaults || {});
+          Object.keys(out).forEach((k) => { if (k in st) out[k] = st[k]; });
+          setTimeout(() => cb && cb(out), 0);
+        },
+        set(obj, cb) {
+          const st = readStore(); const ch = {};
+          Object.keys(obj).forEach((k) => { ch[k] = { oldValue: st[k], newValue: obj[k] }; st[k] = obj[k]; });
+          sset(STORE, JSON.stringify(st));
+          setTimeout(() => { listeners.forEach((l) => { try { l(ch, 'local'); } catch (_) {} }); cb && cb(); }, 0);
+        },
+      },
+      onChanged: { addListener(l) { listeners.push(l); } },
+    },
+    runtime: {
+      lastError: undefined,
+      getManifest: () => ({ version: 'userscript' }),
+      sendMessage(msg, cb) {
+        const done = (r) => { try { cb && cb(r); } catch (_) {} };
+        if (msg && msg.type === 'FETCH_FONT_CSS') fontCss(msg.fontUrl).then((css) => done({ success: true, css }), (e) => done({ success: false, error: String(e.message) }));
+        else if (msg && msg.type === 'FC_TWEET_JSON') tweetJson(String(msg.id)).then((tweet) => done({ success: true, tweet }), (e) => done({ success: false, error: String(e.message) }));
+        else done({ success: false, error: 'unknown message' });
+      },
+    },
+  };
+  return api;
+})();
+
+  const XCSS = "/* X (Twitter) full-width masonry reader \u2014 static CSS (bypasses X CSP).\n   Pairs with public/x-masonry.js (the masonry overlay + native thread reader).\n\n   html.fc-home is toggled by the masonry script whenever the grid is mounted\n   (i.e. on /home, and it STAYS on while the thread reader is open). It hides the\n   left nav and BOTH sidebars for a full-width layout. On any other route with the\n   grid unmounted the class is absent, so X's native layout is left untouched. */\n\n/* Keep X's LEFT nav (header[role=\"banner\"]) visible so the user can navigate;\n   hide only the RIGHT sidebar (trends / who-to-follow). Applies to the grid and\n   to the thread reader (the class stays on while reading). */\nhtml.fc-home [data-testid=\"sidebarColumn\"] {\n  display: none !important;\n}\nhtml.fc-home main[role=\"main\"] {\n  overflow-x: hidden !important;\n}\nhtml.fc-home {\n  overflow-x: hidden !important;\n}\n/* Pin X's centered nav rail (the fixed header>div>div) to the far-left edge so\n   there is no empty gutter to its left; the grid then offsets by the rail width. */\nhtml.fc-home header[role=\"banner\"] > div > div {\n  left: 0 !important;\n}\n/* Reader: with the sidebars gone the native primary column would pin to the left,\n   so center it and give it a comfortable reading width. */\nhtml.fc-home [data-testid=\"primaryColumn\"] {\n  width: 100% !important;\n  max-width: 800px !important;\n  margin: 0 auto !important;\n}\n\n/* Floating close button, shown only while the lightbox reader is open. Sits\n   above the modal (z-index) so it's always clickable. */\n#fc-back {\n  display: none;\n  position: fixed;\n  top: 16px;\n  right: 16px;\n  z-index: 100002;\n  padding: 8px 14px;\n  font: 600 14px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  color: #fff;\n  background: #1d9bf0;\n  border: none;\n  border-radius: 9999px;\n  cursor: pointer;\n  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);\n}\n#fc-back:hover {\n  background: #1a8cd8;\n}\n\n/* Floating layout toggle (shown while the grid is up, hidden while reading /\n   grid-off). Grid on/off uses #fc-gridtoggle styled inline by the script. */\n#fc-layout {\n  position: fixed;\n  top: 16px;\n  right: 16px;\n  z-index: 10001;\n  padding: 8px 14px;\n  font: 600 14px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  color: #fff;\n  background: rgba(29, 155, 240, 0.9);\n  border: none;\n  border-radius: 9999px;\n  cursor: pointer;\n  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);\n}\n#fc-layout:hover {\n  background: #1a8cd8;\n}\n\n/* Rows/table mode: CSS grid (set inline by the script). Cards align at the top\n   of each row and are separated by a consistent divider line instead of the\n   staggered masonry border. */\n#fc-grid.fc-rows .fc-card {\n  border: none;\n  border-top: 1px solid rgba(128, 128, 128, 0.35);\n  border-radius: 0;\n}\n\n/* Masonry columns (explicit flex columns \u2014 performant; NOT CSS column-count). */\n#fc-grid .fc-col {\n  flex: 1 1 0;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n#fc-grid .fc-card {\n  position: relative !important;\n  transform: none !important;\n  width: 100%;\n  min-width: 0;\n  box-sizing: border-box;\n  border: 1px solid rgba(128, 128, 128, 0.25);\n  border-radius: 14px;\n  overflow: hidden;\n  /* Cards always grow to content \u2014 no height cap, no inner scrollbar. */\n  max-height: none;\n  /* The card is NOT a button: text selects/copies, images right-click save.\n     Only the reply (chat) icon opens the thread reader. */\n  cursor: auto;\n  user-select: text;\n  -webkit-touch-callout: none;\n}\n#fc-grid .fc-card [data-testid=\"tweetText\"] {\n  cursor: text;\n  -webkit-touch-callout: default;\n}\n/* Action buttons (reply/like/repost/bookmark/share/\u22ef) forward to the live cell\n   \u2014 they are real click targets, so show a pointer. */\n#fc-grid .fc-card [data-testid=\"reply\"],\n#fc-grid .fc-card [role=\"group\"] button,\n#fc-grid .fc-card [data-testid=\"caret\"],\n#fc-grid .fc-card [data-testid=\"videoPlayer\"],\n#fc-grid .fc-card [data-testid=\"videoComponent\"] {\n  cursor: pointer;\n}\n/* X's menus/dialogs (share, \u22ef, repost) portal into #layers, which sits in a\n   z-index:0 ancestor stacking context. The overlay is therefore mounted INSIDE\n   #layers (see x-masonry.js mount()) as an earlier sibling, so those menus \u2014\n   later siblings \u2014 paint above the grid. No z-index override needed here. */\n\n/* In-card video player (syndication mp4 swapped in on click). */\n#fc-grid .fc-card video.fc-video {\n  display: block;\n  width: 100%;\n  height: auto;\n  max-height: 80vh;\n  background: #000;\n  border-radius: 12px;\n}\n/* Long posts (taller than the cap) scroll inline instead of showing \"Show more\".\n   The 8px scrollbar gutter is always reserved (no layout shift) but the thumb is\n   transparent until you hover the card \u2014 \"hover to get a scrollbar\". */\n#fc-grid .fc-card.fc-clipped {\n  overflow-y: auto;\n}\n#fc-grid .fc-card.fc-clipped::-webkit-scrollbar {\n  width: 8px;\n}\n#fc-grid .fc-card.fc-clipped::-webkit-scrollbar-thumb {\n  background: transparent;\n  border-radius: 4px;\n}\n#fc-grid .fc-card.fc-clipped:hover::-webkit-scrollbar-thumb {\n  background: rgba(128, 128, 128, 0.55);\n}\n#fc-grid .fc-card * {\n  min-width: 0 !important;\n  max-width: 100% !important;\n}\n\n/* Read easily: never clamp/truncate tweet text \u2014 show every post in full. Kills\n   X's line-clamp so cloned cards (whose \"Show more\" React handler is dead) still\n   render the whole caption. The masonry script also rewrites any remaining\n   \"Show more\" link into a real anchor to the post. */\n#fc-grid .fc-card [data-testid=\"tweetText\"],\n[data-testid=\"tweetText\"] {\n  -webkit-line-clamp: unset !important;\n  max-height: none !important;\n  overflow: visible !important;\n}\n\n/* Avatar: X clips it with clip-path: url(#shape-circle), an SVG clipPath that\n   does NOT resolve inside our cloned overlay \u2192 the avatar renders unclipped\n   (square). Force a real CSS circle with an explicit 40x40 box (opt out of the\n   generic `.fc-card * { max-width:100% }`, which would otherwise shrink it). */\n#fc-grid .fc-card [data-testid=\"Tweet-User-Avatar\"],\n#fc-grid .fc-card [data-testid=\"Tweet-User-Avatar\"] * {\n  clip-path: none !important;\n}\n#fc-grid .fc-card [data-testid=\"Tweet-User-Avatar\"],\n#fc-grid .fc-card [data-testid=\"Tweet-User-Avatar\"] div,\n#fc-grid .fc-card [data-testid=\"Tweet-User-Avatar\"] img {\n  width: 40px !important;\n  height: 40px !important;\n  max-width: none !important;\n  border-radius: 9999px !important;\n  overflow: hidden !important;\n}\n\n/* Content full width WITHOUT overlap. A floated avatar column does not work:\n   X's tweet-text wrapper is display:flex (a BFC root), so the whole box is\n   pushed beside the float for its entire height \u2014 a tall empty strip. Instead\n   the avatar column is absolutely positioned in the row's top-left corner and\n   ONLY the tagged header line (.fc-hdr, holds the user name) is indented past\n   it; text and media below span the full card width. Classes are tagged by the\n   masonry script. */\n#fc-grid .fc-card .fc-row {\n  display: block !important;\n  position: relative !important;\n  min-height: 40px !important;\n}\n#fc-grid .fc-card .fc-avcol {\n  position: absolute !important;\n  top: 0 !important;\n  left: 0 !important;\n  width: 40px !important;\n  min-width: 40px !important;\n  max-width: 40px !important;\n  /* Cap to the avatar itself: X leaves a tall thread-connector / spacer in\n     this column; clip it so it can't paint over the full-width content. */\n  height: 40px !important;\n  overflow: hidden !important;\n  margin: 0 !important;\n}\n#fc-grid .fc-card .fc-content {\n  display: block !important;\n  width: auto !important;\n  overflow: visible !important;\n}\n#fc-grid .fc-card .fc-content .fc-hdr {\n  margin-left: 52px !important;\n  min-height: 40px !important;\n}\n\n/* Mobile: flush cards, tighter column gap, keep avatar overlay + hdr indent. */\n@media (max-width: 599px) {\n  #fc-grid .fc-col {\n    gap: 4px;\n  }\n  #fc-grid .fc-card {\n    border-radius: 0;\n    border-left: none;\n    border-right: none;\n  }\n  #fc-grid .fc-card article {\n    padding-left: 8px !important;\n    padding-right: 8px !important;\n  }\n  #fc-grid .fc-card .fc-content .fc-hdr {\n    margin-left: 48px !important;\n  }\n}\n";
+  function startMasonry() {
+    const st = document.createElement('style'); st.id = 'xab-fc-css'; st.textContent = XCSS;
+    (document.head || document.documentElement).appendChild(st);
+    // ---- BEGIN public/x-masonry.js ----
+// FontChanger \u2014 X (Twitter) clone-based masonry reader + native thread reader.
+// Plain classic content script (isolated world, no ES-module loader) so it runs
+// despite X's strict CSP. Harvests X's rendered tweets into our own full-width
+// masonry grid (kept permanently) and drives X's virtualized timeline in the
+// background to load more as you scroll our grid.
+//
+// LAYOUT: full width to the right of the left nav on /home (html.fc-home hides
+// the right sidebar). Column count from chrome.storage (xColsMobile 1\u20133 /
+// xColsTablet 1\u20134 / xColsDesktop 'auto'|1\u20136); mobile (<600) tightens padding/gap.
+// Cards always grow to full height (no max-height cap).
+//
+// READER: clicking a card's reply (chat) icon opens X's OWN live thread (full
+// article + comments + every working button, exactly like the detail page)
+// WITHOUT a page reload. The rest of the card stays inert so text/media can be
+// selected and copied; links open in a new tab. We
+// hide the masonry overlay to reveal X's live thread and SPA-navigate X's router
+// (pushState + popstate). A floating "Back to grid" button navigates home and
+// restores the grid. The overlay is only hidden (never torn down), so scroll
+// position and harvested cards survive the round trip. (Floating the live thread
+// as a modal rendered a blank gray box \u2014 X fights position:fixed \u2014 so we reveal
+// it in place instead.)
+//
+// TOGGLES: layout (masonry <-> rows, xLayout) top-right; grid on/off
+// (fc-gridtoggle, xGridOff) bottom-right. Both persist in chrome.storage.local.
+//
+// PERF: masonry uses explicit flex columns (append each card to the shortest
+// column) \u2014 NOT CSS column-count. Harvest is debounced; clones are stripped of
+// data-testid so they are never re-scanned. We do NOT click X's inline "Show
+// more" (that reflowed every long tweet \u2014 a jank storm); truncated captions are
+// read in full in the thread reader instead. The bootstrap loader is capped.
+(function () {
+  'use strict';
+  var ID = 'fc-masonry';
+  var GAP = 10;
+  var MEDIA_GRACE = 6000; // ms to wait for a cell's media/cards to load before harvesting anyway
+
+  function isHome() {
+    var h = location.hostname.replace(/^www\./, '');
+    if (h !== 'x.com' && !/twitter\.com$/.test(h)) return false;
+    return location.pathname === '/home' || location.pathname === '/';
+  }
+  // Keep X's left nav visible; the grid fills the width to the RIGHT of it. The
+  // right sidebar is hidden via CSS. Nav width is measured at runtime (it's
+  // responsive: a wide labelled rail or a narrow icon rail).
+  function navWidth() {
+    var hdr = document.querySelector('header[role="banner"]');
+    if (!hdr) return 0;
+    // The visible nav rail is the fixed inner column (header > div > div, ~275px);
+    // the header box itself is wider (X reserves centered gutter). CSS pins that
+    // rail to the left edge; we offset the grid by the rail's width, not the box.
+    var rail = hdr.querySelector(':scope > div > div') || hdr;
+    var w = Math.round(rail.getBoundingClientRect().width);
+    return (w > 0 && w < window.innerWidth * 0.5) ? w : 0;
+  }
+  // Bucket by viewport: <600 mobile, 600..1200 tablet, >1200 desktop.
+  var xColsMobile = 1, xColsTablet = 2, xColsDesktop = 'auto';
+  var gridOff = false;
+  function clampInt(n, lo, hi, fallback) {
+    n = parseInt(n, 10);
+    if (isNaN(n)) return fallback;
+    return Math.max(lo, Math.min(hi, n));
+  }
+  function colCount() {
+    var iw = window.innerWidth;
+    if (iw < 600) return clampInt(xColsMobile, 1, 3, 1);
+    if (iw <= 1200) return clampInt(xColsTablet, 1, 4, 2);
+    if (xColsDesktop === 'auto') {
+      var w = iw - navWidth(); // full width MINUS the left nav
+      if (w > 1600) return 4;
+      if (w > 1200) return 3;
+      if (w > 800) return 2;
+      return 1;
+    }
+    return clampInt(xColsDesktop, 1, 6, 3);
+  }
+
+  var seen = new Set();
+  var firstSeen = Object.create(null);
+  var expandClicked = new WeakSet(); // live cells whose inline "Show more" we already clicked
+  var incomplete = Object.create(null); // status-key -> clone harvested before its media had loaded
+  var cards = [];           // ordered card elements
+  var columnEls = [];       // current column containers
+  var curCols = 0;
+  var overlay = null, grid = null, mo = null, loading = false, scheduled = false;
+  var lastCount = 0, noProgress = 0;
+  var readerOpen = false, backBtn = null;
+  var layoutMode = 'masonry'; // 'masonry' (staggered columns) | 'rows' (aligned grid). Loaded from storage.
+  var layoutBtn = null;
+  var gridToggleBtn = null;
+  var cardLiveCells = typeof WeakMap !== 'undefined' ? new WeakMap() : null; // card -> live cell for menu feedback
+  var menuPendingCard = null;
+
+  function keyOf(article) {
+    var links = article.querySelectorAll('a[href*="/status/"]');
+    for (var i = 0; i < links.length; i++) {
+      var m = links[i].getAttribute('href').match(/\/status\/(\d+)/);
+      if (m) return m[1];
+    }
+    return (article.innerText || '').slice(0, 80);
+  }
+  function statusHrefOf(article) {
+    var links = article.querySelectorAll('a[href*="/status/"]');
+    for (var i = 0; i < links.length; i++) {
+      if (/\/status\/\d+$/.test(links[i].getAttribute('href'))) return links[i].href; // clean permalink
+    }
+    return links.length ? links[0].href : '';
+  }
+  // Ready when every <img> decoded AND every media wrapper (photo/link card) has
+  // its <img> \u2014 otherwise we'd clone an empty bordered box that never fills in.
+  function mediaReady(cell) {
+    // Avatar first \u2014 x.com is fully lazy, and a blank avatar is the most visible
+    // miss. X mounts the cell shell (text/buttons) BEFORE the avatar <img> even
+    // exists, so "no img yet" is just as unready as "img not decoded".
+    var avWrap = cell.querySelector('[data-testid="Tweet-User-Avatar"]');
+    if (avWrap && !avWrap.querySelector('img') && !hasBgImage(avWrap)) return false;
+    var avi = avWrap && avWrap.querySelector('img');
+    if (avi && (!avi.complete || avi.naturalWidth === 0)) return false;
+    // Unmounted photo: X renders a bare aspect-ratio placeholder inside the
+    // /photo/N anchor before the tweetPhoto wrapper + <img> mount (verified on
+    // live x.com: clone had the anchor + padding-bottom div only, live cell
+    // later grew data-testid="tweetPhoto" with a pbs.twimg.com img).
+    var phAnchors = cell.querySelectorAll('a[href*="/photo/"]');
+    for (var p = 0; p < phAnchors.length; p++) {
+      if (!phAnchors[p].querySelector('img') && !hasBgImage(phAnchors[p])) return false;
+    }
+    var imgs = cell.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) {
+      if (!imgs[i].complete || imgs[i].naturalWidth === 0) return false;
+    }
+    var wraps = cell.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="card.wrapper"]');
+    for (var j = 0; j < wraps.length; j++) {
+      // A media wrapper is resolved once it has an <img> OR a background-image URL
+      // (X renders some card/photo media as a bg-image div, not an <img>).
+      if (!wraps[j].querySelector('img') && !hasBgImage(wraps[j])) return false;
+    }
+    return true;
+  }
+  function eagerImgs(root) {
+    var imgs = root.querySelectorAll('img');
+    for (var c = 0; c < imgs.length; c++) {
+      imgs[c].loading = 'eager';
+      imgs[c].setAttribute('decoding', 'sync');
+      imgs[c].removeAttribute('fetchpriority');
+      // X fades imgs in: inline opacity:0, then React sets 1 on load. The clone's
+      // React is dead, so a fully-loaded img stays invisible (verified live:
+      // complete=true, naturalWidth>0, computed opacity 0). Force it visible.
+      imgs[c].style.opacity = '1';
+    }
+  }
+  // X lazy-assigns media <img> src only when the REAL cell intersects the
+  // viewport; a clone's IntersectionObserver never fires, so an unfilled photo /
+  // link-card leaves a blank bordered box forever. Drop any media wrapper that
+  // has no real (http) image \u2014 the card keeps its text and any loadable media
+  // (a wrapper whose img already has an http src still loads in the overlay).
+  function stripEmptyMedia(clone) {
+    // Cloned <video> can't stream (its blob/MediaSource src is dead once detached),
+    // so keep only the poster frame; drop the whole player if it has no poster.
+    var vids = clone.querySelectorAll('video');
+    for (var v = 0; v < vids.length; v++) {
+      var vid = vids[v];
+      var poster = vid.getAttribute('poster') || '';
+      vid.removeAttribute('src');
+      while (vid.firstChild) vid.removeChild(vid.firstChild);
+      vid.setAttribute('preload', 'none');
+      if (poster.indexOf('http') === -1) {
+        var host = vid.closest('[data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="tweetPhoto"]') || vid;
+        host.remove();
+      }
+    }
+    var wraps = clone.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="card.wrapper"]');
+    for (var i = 0; i < wraps.length; i++) {
+      // Keep the wrapper if it has a loadable image: an <img> with an http src, OR
+      // a nested element whose background-image points at an http URL (X renders
+      // some card/photo media as a background-image div, not an <img>).
+      if (wraps[i].querySelector('img[src^="http"]') || hasBgImage(wraps[i])) continue;
+      wraps[i].remove();
+    }
+    // Unmounted photo placeholder: a /photo/N anchor with no <img> at all (X
+    // hadn't mounted tweetPhoto yet when we cloned). Its aspect-ratio div +
+    // bordered ancestor render as a big empty box \u2014 remove the whole empty
+    // media region (climb while the parent holds nothing else real).
+    var phs = clone.querySelectorAll('a[href*="/photo/"]');
+    for (var p = 0; p < phs.length; p++) {
+      var a = phs[p];
+      if (a.querySelector('img[src^="http"]') || hasBgImage(a)) continue;
+      var top = a;
+      while (top.parentElement && top.parentElement !== clone &&
+             !top.parentElement.querySelector('[data-testid="tweetText"], [data-testid="User-Name"], time, img[src^="http"], video')) {
+        top = top.parentElement;
+      }
+      top.remove();
+    }
+  }
+  function hasBgImage(root) {
+    var els = root.querySelectorAll('*');
+    for (var i = 0; i < els.length; i++) {
+      var bg = els[i].style && els[i].style.backgroundImage;
+      if (bg && bg.indexOf('http') !== -1) return true;
+    }
+    return false;
+  }
+  // Tag the tweet's flex row + its avatar/content columns so CSS can overlay the
+  // avatar in the row's top-left corner and indent ONLY the header line beside it.
+  // Floating the avatar column does NOT work here: X's tweet-text wrapper is a
+  // flex container (a BFC root), so instead of its line boxes wrapping around the
+  // float, the whole box gets pushed 52px right for its full height \u2014 the empty
+  // strip the user keeps seeing. Absolute avatar + header margin has no such
+  // interaction, so text/media get the card's full width.
+  function tagAvatarLayout(clone) {
+    var av = clone.querySelector('[data-testid="Tweet-User-Avatar"]');
+    if (!av) return;
+    // Anchor on the tweet body (or name) so we tag the RIGHT columns regardless of
+    // DOM variation. The avatar column = highest ancestor of the avatar that does
+    // NOT contain the body; its parent is the flex row; the content column is the
+    // row child that DOES contain the body. (The old child-count walk mis-tagged a
+    // thread-connector line as the content column \u2192 body sat beside the float in a
+    // tall empty strip instead of wrapping under the avatar.)
+    var body = clone.querySelector('[data-testid="tweetText"]') ||
+               clone.querySelector('[data-testid="User-Name"]');
+    if (!body) return;
+    var col = av;
+    while (col.parentElement && col.parentElement !== clone && !col.parentElement.contains(body)) {
+      col = col.parentElement;
+    }
+    var row = col.parentElement;
+    if (!row || row === clone) return;
+    var content = null;
+    for (var i = 0; i < row.children.length; i++) {
+      if (row.children[i] !== col && row.children[i].contains(body)) { content = row.children[i]; break; }
+    }
+    if (!content) return;
+    row.classList.add('fc-row');
+    col.classList.add('fc-avcol');
+    content.classList.add('fc-content');
+    // Header line = the content child holding the user name; only IT gets the
+    // 52px indent so it sits beside the absolutely-positioned avatar. Everything
+    // after it (text, media, actions) spans the full card width.
+    var name = content.querySelector('[data-testid="User-Name"]');
+    var hdr = name;
+    while (hdr && hdr.parentElement !== content) hdr = hdr.parentElement;
+    if (!hdr) hdr = content.firstElementChild;
+    if (hdr) hdr.classList.add('fc-hdr');
+  }
+
+  function buildColumns(n) {
+    grid.textContent = '';
+    columnEls = [];
+    for (var i = 0; i < n; i++) {
+      var col = document.createElement('div');
+      col.className = 'fc-col';
+      grid.appendChild(col);
+      columnEls.push(col);
+    }
+    curCols = n;
+  }
+  function shortest() {
+    var best = columnEls[0];
+    for (var i = 1; i < columnEls.length; i++) {
+      if (columnEls[i].offsetHeight < best.offsetHeight) best = columnEls[i];
+    }
+    return best;
+  }
+  // Masonry: append to the shortest column. Rows: append straight to the grid in
+  // source order (CSS grid lays them out in aligned rows).
+  function place(el) {
+    if (layoutMode === 'rows') grid.appendChild(el);
+    else shortest().appendChild(el);
+  }
+
+  function positionOverlay() {
+    if (overlay) overlay.style.left = navWidth() + 'px'; // sit to the right of the left nav
+  }
+  // Switch the grid container between explicit flex columns (masonry) and a CSS
+  // grid whose rows align at the top (table/rows mode).
+  function applyGridStyle(n) {
+    if (layoutMode === 'rows') {
+      grid.classList.add('fc-rows');
+      grid.style.display = 'grid';
+      grid.style.gridTemplateColumns = 'repeat(' + n + ', minmax(0, 1fr))';
+      grid.style.alignItems = 'start';
+    } else {
+      grid.classList.remove('fc-rows');
+      grid.style.display = 'flex';
+      grid.style.gridTemplateColumns = '';
+      grid.style.alignItems = 'flex-start';
+    }
+  }
+  // Mobile (<600): overlay padding 0 and 4px gap; desktop keeps 8px / GAP.
+  function applyMobilePad() {
+    if (!overlay || !grid) return;
+    if (window.innerWidth < 600) {
+      overlay.style.padding = '0';
+      grid.style.gap = '4px';
+    } else {
+      overlay.style.padding = '8px';
+      grid.style.gap = GAP + 'px';
+    }
+  }
+  function layout() {
+    if (!grid) return;
+    positionOverlay();
+    applyMobilePad();
+    var n = colCount();
+    applyGridStyle(n);
+    // Re-parenting a scrollable card resets its scrollTop, so capture each card's
+    // scroll offset before any redistribute and restore it after. Without this,
+    // the periodic re-layout snapped a card the user was reading back to the top.
+    var scrolls = null;
+    if (layoutMode === 'rows') {
+      // Cards are direct grid children in source order. Drop any leftover column
+      // wrappers from a previous masonry render, then (re)append every card.
+      if (columnEls.length || grid.querySelector('.fc-col')) {
+        scrolls = saveScrolls();
+        grid.textContent = '';
+        columnEls = [];
+        curCols = 0;
+        for (var i = 0; i < cards.length; i++) grid.appendChild(cards[i]);
+        restoreScrolls(scrolls);
+      }
+    } else if (n !== curCols || columnEls.length === 0) {
+      scrolls = saveScrolls();
+      buildColumns(n);
+      for (var j = 0; j < cards.length; j++) place(cards[j]); // redistribute
+      restoreScrolls(scrolls);
+    }
+  }
+  function saveScrolls() {
+    var s = [];
+    for (var i = 0; i < cards.length; i++) s[i] = cards[i].scrollTop;
+    return s;
+  }
+  function restoreScrolls(s) {
+    if (!s) return;
+    for (var i = 0; i < cards.length; i++) if (s[i]) cards[i].scrollTop = s[i];
+  }
+
+  // Build a display clone of a live cell (shared by harvest/refill/refreshCard).
+  // data-fc-y records the cell's document offset: X's virtualizer re-renders a
+  // dropped cell when that offset scrolls back into ITS viewport, which is how
+  // forwarded actions find their live cell again after X evicted it.
+  function makeCard(cell, k, statusHref) {
+    var clone = cell.cloneNode(true);
+    clone.removeAttribute('data-testid');
+    clone.removeAttribute('style');
+    clone.className = 'fc-card';
+    clone.setAttribute('data-fc-status', statusHref || '');
+    clone.setAttribute('data-fc-id', k);
+    clone.setAttribute('data-fc-y', String(Math.round(cell.getBoundingClientRect().top + window.scrollY)));
+    eagerImgs(clone);
+    stripEmptyMedia(clone);
+    tagAvatarLayout(clone);
+    return clone;
+  }
+
+  function harvest() {
+    if (!grid) return;
+    var now = Date.now();
+    var cells = document.querySelectorAll('[data-testid="cellInnerDiv"]'); // only X's live cells
+    for (var i = 0; i < cells.length; i++) {
+      var cell = cells[i];
+      var art = cell.querySelector('article');
+      if (!art) continue;
+      if (cell.hasAttribute('data-xab-hidden') || cell.querySelector('[data-xab-hidden]')) continue;
+      if (!art.querySelector('time')) continue;
+      var k = keyOf(art);
+      if (!k) continue;
+      if (seen.has(k)) {
+        // Re-fill pass: this cell was already harvested. If its clone went in
+        // before X had lazy-loaded the media and the live cell is now fully
+        // loaded, replace the clone with a complete fresh copy.
+        if (incomplete[k] && mediaReady(cell)) refill(k, cell);
+        continue;
+      }
+      if (firstSeen[k] === undefined) firstSeen[k] = now;
+
+      // Auto-expand long posts: X's inline "Show more" is a <button role=button>
+      // (no href) that reveals the rest of the text IN PLACE with no navigation
+      // (verified on live x.com: click \u2192 path unchanged, text grew). Click it
+      // once per cell, then wait for the expansion before cloning so the card
+      // captures the full text and no dead "Show more" remains. Anchor-type
+      // show-more (has href \u2192 would navigate) is never clicked.
+      var sm = cell.querySelector('[data-testid="tweet-text-show-more-link"]');
+      var inlineExpand = sm && !(sm.tagName === 'A' && sm.getAttribute('href'));
+      if (inlineExpand && !expandClicked.has(cell)) {
+        expandClicked.add(cell);
+        try { sm.click(); } catch (e) { /* ignore */ }
+      }
+      var stillTruncated = inlineExpand && cell.querySelector('[data-testid="tweet-text-show-more-link"]');
+
+      var ready = !stillTruncated && mediaReady(cell);
+      if (!ready && now - firstSeen[k] < MEDIA_GRACE) continue; // let media/text settle
+      seen.add(k);
+
+      var clone = makeCard(cell, k, statusHrefOf(art));
+      if (!ready) incomplete[k] = clone; // grace expired with media still missing \u2192 re-fill later
+      cards.push(clone);
+      place(clone);
+    }
+  }
+
+  // Toggle .fc-clipped when content overflows (no-op with max-height:none \u2014 kept
+  // so a future cap can reuse it). Re-run as images load & grow.
+  function markClipped() {
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      c.classList.toggle('fc-clipped', c.scrollHeight > c.clientHeight + 4);
+    }
+  }
+
+  // Replace an incomplete clone (harvested before its media loaded) with a fresh
+  // full clone of the now-loaded live cell, in the same grid position.
+  function refill(k, cell) {
+    var old = incomplete[k];
+    if (!old || !old.parentNode) { delete incomplete[k]; return; }
+    if (old.getAttribute('data-fc-playing')) { delete incomplete[k]; return; } // in-card video running \u2014 never clobber
+    if (old.scrollTop > 4) return; // user is scrolling/reading this card \u2014 don't swap it out from under them
+    var art = cell.querySelector('article');
+    var fresh = makeCard(cell, k, art ? statusHrefOf(art) : (old.getAttribute('data-fc-status') || ''));
+    old.parentNode.replaceChild(fresh, old);
+    var idx = cards.indexOf(old);
+    if (idx >= 0) cards[idx] = fresh;
+    delete incomplete[k];
+    markClipped();
+  }
+
+  function schedule() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(function () { scheduled = false; harvest(); markClipped(); });
+  }
+
+  // Drive X's background timeline. X only mounts a cell's media/avatar when the
+  // cell sits in X's OWN viewport, so a blind one-viewport step can rush past a
+  // cell before it hydrates \u2014 the clone then stays blank forever. Instead, park
+  // the background viewport on the first cell that still needs media (unharvested
+  // or harvested-incomplete) and let it load; only when nothing on screen is
+  // pending do we step onward. Cells that refused to hydrate within twice the
+  // grace window are skipped so one dead cell can't stall the loader.
+  function advanceTimeline() {
+    var now = Date.now();
+    var cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
+    for (var i = 0; i < cells.length; i++) {
+      var cell = cells[i];
+      var art = cell.querySelector('article');
+      if (!art || !art.querySelector('time')) continue;
+      var k = keyOf(art);
+      if (!k) continue;
+      if (seen.has(k) && !incomplete[k]) continue;
+      if (firstSeen[k] !== undefined && now - firstSeen[k] > MEDIA_GRACE * 2) continue;
+      if (mediaReady(cell)) continue;
+      cell.scrollIntoView({ block: 'center' });
+      return;
+    }
+    window.scrollBy(0, window.innerHeight * 1.0);
+  }
+
+  // ---- Layout mode (masonry <-> aligned rows) -------------------------------
+  function updateLayoutBtn() {
+    if (layoutBtn) layoutBtn.textContent = layoutMode === 'rows' ? '\u25a6 Rows' : '\u25a4 Masonry';
+  }
+  function ensureLayoutBtn() {
+    if (layoutBtn) return;
+    layoutBtn = document.createElement('button');
+    layoutBtn.id = 'fc-layout';
+    layoutBtn.type = 'button';
+    layoutBtn.title = 'Toggle grid layout';
+    layoutBtn.addEventListener('click', toggleLayout);
+    document.body.appendChild(layoutBtn);
+    updateLayoutBtn();
+  }
+  function toggleLayout() {
+    layoutMode = layoutMode === 'rows' ? 'masonry' : 'rows';
+    try { chrome.storage.local.set({ xLayout: layoutMode }); } catch (e) { /* no storage */ }
+    updateLayoutBtn();
+    layout();
+    markClipped();
+  }
+  function loadLayoutMode() {
+    try {
+      chrome.storage.local.get({ xLayout: 'masonry' }, function (res) {
+        var mode = (res && res.xLayout === 'rows') ? 'rows' : 'masonry';
+        if (mode === layoutMode) { updateLayoutBtn(); return; }
+        layoutMode = mode;
+        updateLayoutBtn();
+        if (grid) { layout(); markClipped(); }
+      });
+    } catch (e) { /* no storage */ }
+  }
+
+  // ---- Grid on/off (fc-gridtoggle) -----------------------------------------
+  function updateGridToggleBtn() {
+    if (gridToggleBtn) gridToggleBtn.textContent = gridOff ? '\u2630' : '\u2637';
+  }
+  function ensureGridToggleBtn() {
+    if (gridToggleBtn) return;
+    gridToggleBtn = document.createElement('button');
+    gridToggleBtn.id = 'fc-gridtoggle';
+    gridToggleBtn.type = 'button';
+    gridToggleBtn.title = 'Grid on/off';
+    gridToggleBtn.style.cssText = 'position:fixed;right:40px;bottom:62px;z-index:2147483000;width:28px;height:28px;padding:0;border-radius:50%;border:none;background:#1d9bf0;color:#fff;opacity:.55;font:700 14px system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.3)';
+    gridToggleBtn.addEventListener('click', function () {
+      gridOff = !gridOff;
+      try { chrome.storage.local.set({ xGridOff: gridOff }); } catch (e) { /* no storage */ }
+      updateGridToggleBtn();
+      if (gridOff) unmount();
+      syncChromeUi();
+    });
+    document.body.appendChild(gridToggleBtn);
+    updateGridToggleBtn();
+  }
+  // Hide layout + grid toggle while reading; hide layout while grid off; hide
+  // grid toggle off /home.
+  function syncChromeUi() {
+    var home = isHome();
+    if (gridToggleBtn) gridToggleBtn.style.display = (home && !readerOpen) ? '' : 'none';
+    if (layoutBtn) layoutBtn.style.display = (home && !readerOpen && !gridOff && overlay) ? 'block' : 'none';
+  }
+
+  // ---- Reader (live thread, no reload) -------------------------------------
+  // Clicking a card's reply icon opens X's OWN live thread \u2014 full article, comments, and every
+  // button work exactly like the detail page \u2014 WITHOUT a page reload. We hide the
+  // masonry overlay to reveal X's live thread underneath and SPA-navigate X's
+  // router (pushState + popstate is what its history listener reacts to; a
+  // synthetic anchor click falls through to a full reload \u2014 verified on live
+  // x.com). A floating "Back to grid" button navigates home and restores the grid.
+  // The overlay is only hidden (never torn down), so scroll position and harvested
+  // cards survive the round trip. (Floating a live thread as a modal rendered a
+  // blank gray box \u2014 X's layout fights position:fixed \u2014 so we reveal it in place.)
+  function spaNavigate(href) {
+    try {
+      history.pushState({}, '', href);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } catch (e) {
+      location.href = href; // last-resort fallback (full nav) if pushState is blocked
+    }
+  }
+  function ensureBackBtn() {
+    if (backBtn) return;
+    backBtn = document.createElement('button');
+    backBtn.id = 'fc-back';
+    backBtn.type = 'button';
+    backBtn.textContent = '\u2190 Back to grid';
+    backBtn.addEventListener('click', closeReader);
+    document.body.appendChild(backBtn);
+  }
+  function openReader(href) {
+    if (!href || readerOpen) return;
+    readerOpen = true;
+    if (overlay) overlay.style.display = 'none'; // reveal X's live thread underneath
+    ensureBackBtn();
+    backBtn.style.display = 'block';
+    syncChromeUi();
+    spaNavigate(href);
+  }
+  function closeReader() {
+    if (!readerOpen) return;
+    readerOpen = false;
+    if (backBtn) backBtn.style.display = 'none';
+    if (!isHome()) spaNavigate(location.origin + '/home');
+    if (overlay) overlay.style.display = ''; // grid (with its cards + scroll) comes right back
+    syncChromeUi();
+  }
+  // ---- Forwarding clone clicks to the LIVE cell ------------------------------
+  // Clones are dead React, so their buttons do nothing by themselves. But the
+  // live cell (when X still has it in the background timeline) reacts to a full
+  // synthetic pointer sequence (verified on live x.com: like toggled \u2192
+  // data-testid flipped like/unlike; share button opened X's real menu). Menus
+  // and dialogs render into X's #layers portal, which CSS raises above the
+  // overlay so they are visible and clickable.
+  // A menu/dialog X portaled into #layers is anchored to document coords of the
+  // live button \u2014 any background scroll drags it off-screen. Loader pauses
+  // while one is open.
+  function xMenuOpen() {
+    return !!document.querySelector('#layers [role="menu"], #layers [role="dialog"]');
+  }
+  // X drops its dropdown as `#layers \u2026 [role=menu]` with inline top/right
+  // anchored to the LIVE button \u2014 nowhere near the card the user clicked. Wait
+  // for the menu to mount (\u2264 ~1s), then pin it at the mouse point, clamped
+  // fully on-screen. Repositioning is safe: item clicks keep working
+  // (verified live \u2014 copy-link fired its toast after the move).
+  function moveMenuNear(x, y, preExisting) {
+    if (window.innerWidth < 600) return; // mobile: leave X's menu where it lands
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      var m = document.querySelector('#layers [role="menu"]');
+      if (m && m !== preExisting) {
+        clearInterval(iv);
+        m.style.position = 'fixed';
+        m.style.right = 'auto';
+        m.style.bottom = 'auto';
+        m.style.transform = 'none';
+        var r = m.getBoundingClientRect();
+        m.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
+        m.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + 'px';
+      } else if (tries > 12) {
+        clearInterval(iv); // action had no menu (like/bookmark) \u2014 nothing to move
+      }
+    }, 80);
+  }
+  function liveArticleFor(card) {
+    var k = card.getAttribute('data-fc-id');
+    if (!k || !/^\d+$/.test(k)) return null;
+    var arts = document.querySelectorAll('[data-testid="cellInnerDiv"] article');
+    for (var i = 0; i < arts.length; i++) {
+      if (arts[i].querySelector('a[href*="/status/' + k + '"]')) return arts[i];
+    }
+    return null;
+  }
+  function forwardClick(el) {
+    el.click();
+  }
+  // Re-clone the live cell so a forwarded action's new state (heart color,
+  // count) shows up in the card. Retries while the cell is still hydrating \u2014
+  // a freshly restored cell mounts without media, and swapping the card for
+  // that shell would eat its images.
+  function refreshCard(card, attempt) {
+    if (card.getAttribute('data-fc-playing')) return; // in-card video running \u2014 never clobber
+    var art = liveArticleFor(card);
+    if (!art || !card.parentNode) return;
+    var cell = art.closest('[data-testid="cellInnerDiv"]');
+    if (!cell) return;
+    if (!mediaReady(cell)) {
+      if ((attempt || 0) < 5) setTimeout(function () { refreshCard(card, (attempt || 0) + 1); }, 700);
+      return;
+    }
+    var k = card.getAttribute('data-fc-id');
+    var fresh = makeCard(cell, k, statusHrefOf(art) || card.getAttribute('data-fc-status'));
+    var storedCell = cardLiveCells && cardLiveCells.get(card);
+    card.parentNode.replaceChild(fresh, card);
+    var idx = cards.indexOf(card);
+    if (idx >= 0) cards[idx] = fresh;
+    if (storedCell && cardLiveCells) cardLiveCells.set(fresh, storedCell);
+    if (menuPendingCard === card) menuPendingCard = fresh;
+    markClipped();
+  }
+  // ---- In-card video playback -----------------------------------------------
+  // A clone's <video> can never stream (blob/MediaSource dies on detach), but
+  // X's public syndication API returns direct video.twimg.com mp4 URLs \u2014 same
+  // host X's own player streams from, so the page's media-src CSP allows it.
+  // The fetch itself is CSP/CORS-blocked on x.com, so the background service
+  // worker does it (FC_TWEET_JSON). Failure falls back to the thread reader.
+  function bestVideoVariant(media) {
+    var vs = (media.video_info && media.video_info.variants) || [];
+    var best = null;
+    for (var i = 0; i < vs.length; i++) {
+      if (vs[i].content_type !== 'video/mp4') continue;
+      if (!best || (vs[i].bitrate || 0) > (best.bitrate || 0)) best = vs[i];
+    }
+    return best && best.url;
+  }
+  var tweetJsonCache = Object.create(null); // id -> syndication tweet JSON (hover would refetch otherwise)
+  function playVideoInCard(card, playerEl, hover) {
+    var k = card.getAttribute('data-fc-id');
+    // Hover is speculative \u2014 fail silently. A click falls back to the reader.
+    var fallback = hover ? function () {} : function () { openReader(card.getAttribute('data-fc-status')); };
+    var canSend = false;
+    try { canSend = !!(chrome.runtime && chrome.runtime.sendMessage); } catch (err) { canSend = false; }
+    if (!canSend || !/^\d+$/.test(k)) { fallback(); return; }
+    var players = card.querySelectorAll('[data-testid="videoPlayer"], [data-testid="videoComponent"]');
+    var idx = 0;
+    for (var i = 0; i < players.length; i++) if (players[i] === playerEl) { idx = i; break; }
+    var onTweet = function (j) {
+        var media = [];
+        var pools = [j.mediaDetails || []];
+        if (j.quoted_tweet && j.quoted_tweet.mediaDetails) pools.push(j.quoted_tweet.mediaDetails);
+        for (var p = 0; p < pools.length; p++) {
+          for (var m2 = 0; m2 < pools[p].length; m2++) {
+            var t = pools[p][m2].type;
+            if (t === 'video' || t === 'animated_gif') media.push(pools[p][m2]);
+          }
+        }
+        var m = media[idx] || media[0];
+        var url = m && bestVideoVariant(m);
+        if (!url) { fallback(); return; }
+        if (!playerEl.isConnected || playerEl.querySelector('video.fc-video')) return; // card refreshed / raced
+        var vid = document.createElement('video');
+        vid.className = 'fc-video';
+        vid.controls = true;
+        vid.autoplay = true;
+        vid.playsInline = true;
+        vid.preload = 'auto';
+        if (m.type === 'animated_gif') { vid.loop = true; vid.muted = true; vid.controls = false; }
+        // Hover preview starts muted (no user activation \u2014 unmuted play would be
+        // rejected); marked so mouseleave pauses it and a click keeps it.
+        if (hover) { vid.muted = true; vid.setAttribute('data-fc-hover', '1'); }
+        if ((m.media_url_https || '').indexOf('http') === 0) vid.poster = m.media_url_https;
+        vid.src = url;
+        vid.addEventListener('error', function () {
+          card.removeAttribute('data-fc-playing');
+          fallback(); // variant dead or media-src blocked \u2014 thread as last resort
+        }, { once: true });
+        card.setAttribute('data-fc-playing', '1'); // refill/refresh must not clobber the player
+        playerEl.textContent = '';
+        playerEl.appendChild(vid);
+        // A real click carries user activation \u2192 sound autoplay allowed. If the
+        // activation is gone (or the click was synthetic), retry muted \u2014 muted
+        // autoplay is always allowed; the user unmutes via the controls.
+        var p = vid.play();
+        if (p && p.catch) p.catch(function () {
+          vid.muted = true;
+          var q = vid.play();
+          if (q && q.catch) q.catch(function () { /* poster + controls remain */ });
+        });
+    };
+    if (tweetJsonCache[k]) { onTweet(tweetJsonCache[k]); return; }
+    try {
+      chrome.runtime.sendMessage({ type: 'FC_TWEET_JSON', id: k }, function (res) {
+        if ((chrome.runtime && chrome.runtime.lastError) || !res || !res.success) { fallback(); return; }
+        tweetJsonCache[k] = res.tweet || {};
+        onTweet(tweetJsonCache[k]);
+      });
+    } catch (err) { fallback(); }
+  }
+  // Hover-to-play: dwell 250ms on a card's video \u2192 muted inline preview; leave \u2192
+  // pause. A click on the running preview hands it to the native controls (and
+  // un-marks it so leaving no longer pauses).
+  var hoverTimer = null, hoverPlayer = null;
+  function onGridOver(e) {
+    var player = e.target.closest ? e.target.closest('[data-testid="videoPlayer"], [data-testid="videoComponent"]') : null;
+    if (!player) return;
+    var card = player.closest('.fc-card');
+    if (!card) return;
+    var vid = player.querySelector('video.fc-video');
+    if (vid) {
+      if (vid.getAttribute('data-fc-hover') && vid.paused) {
+        var p = vid.play();
+        if (p && p.catch) p.catch(function () { /* stays paused */ });
+      }
+      return;
+    }
+    if (hoverPlayer === player) return; // dwell timer already armed
+    clearTimeout(hoverTimer);
+    hoverPlayer = player;
+    hoverTimer = setTimeout(function () {
+      hoverPlayer = null;
+      if (!player.isConnected || player.querySelector('video.fc-video')) return;
+      playVideoInCard(card, player, true);
+    }, 250);
+  }
+  function onGridOut(e) {
+    var player = e.target.closest ? e.target.closest('[data-testid="videoPlayer"], [data-testid="videoComponent"]') : null;
+    if (!player) return;
+    if (e.relatedTarget && player.contains(e.relatedTarget)) return; // moved within the player
+    if (hoverPlayer === player) { clearTimeout(hoverTimer); hoverPlayer = null; }
+    var vid = player.querySelector('video.fc-video');
+    if (vid && vid.getAttribute('data-fc-hover') && !vid.paused) vid.pause();
+  }
+
+  // Bring an evicted cell back: scroll X's background timeline to the cell's
+  // recorded document offset and poll \u2014 the virtualizer re-renders it once its
+  // slot is inside X's viewport (verified live). Offsets can drift a little as
+  // X re-measures, so probe one viewport above/below before giving up.
+  var restoring = false;
+  function restoreLiveCell(card, cb) {
+    var y = parseInt(card.getAttribute('data-fc-y') || '', 10);
+    if (isNaN(y)) { cb(null); return; }
+    restoring = true;
+    loading = true; // freeze the loader \u2014 it must not fight this scroll
+    window.scrollTo(0, Math.max(0, y - Math.round(window.innerHeight / 2)));
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      var art = liveArticleFor(card);
+      if (art) { clearInterval(iv); restoring = false; loading = false; cb(art); return; }
+      if (tries === 8) window.scrollTo(0, Math.max(0, y - window.innerHeight * 1.5));
+      if (tries === 12) window.scrollTo(0, y);
+      if (tries >= 16) { clearInterval(iv); restoring = false; loading = false; cb(null); }
+    }, 200);
+  }
+  // Re-clone a live cell into an existing card in place (feedback notices after
+  // "Not interested" etc.). No mediaReady / article requirement.
+  function replaceCardFromCell(card, cell) {
+    if (!card || !card.parentNode || !cell) return card;
+    var clone = cell.cloneNode(true);
+    clone.removeAttribute('data-testid');
+    clone.removeAttribute('style');
+    clone.className = 'fc-card';
+    clone.setAttribute('data-fc-id', card.getAttribute('data-fc-id') || '');
+    clone.setAttribute('data-fc-status', card.getAttribute('data-fc-status') || '');
+    var y = card.getAttribute('data-fc-y');
+    if (y) clone.setAttribute('data-fc-y', y);
+    eagerImgs(clone);
+    stripEmptyMedia(clone);
+    tagAvatarLayout(clone);
+    card.parentNode.replaceChild(clone, card);
+    var idx = cards.indexOf(card);
+    if (idx >= 0) cards[idx] = clone;
+    if (cardLiveCells) cardLiveCells.set(clone, cell);
+    if (menuPendingCard === card) menuPendingCard = clone;
+    return clone;
+  }
+  // Forward a clone button click to the matching live control (testid / index /
+  // text), then pin any menu near the pointer. Falls back to restoring an
+  // evicted cell, then the thread reader.
+  function forwardToLive(card, btn, mx, my) {
+    if (restoring) return; // a restore drive is mid-flight \u2014 swallow, don't race
+    var act = function (root) {
+      var target = null;
+      var t = btn.getAttribute('data-testid');
+      if (t) target = root.querySelector('[data-testid="' + t + '"]');
+      if (!target) {
+        // Share has no data-testid \u2014 map by index within the actions row.
+        var cg = btn.closest('[role="group"]');
+        var lg = root.querySelector('[role="group"]');
+        if (cg && lg) {
+          var cb = cg.querySelectorAll('button');
+          var lb = lg.querySelectorAll('button');
+          for (var i = 0; i < cb.length; i++) {
+            if (cb[i] === btn && lb[i]) { target = lb[i]; break; }
+          }
+        }
+        // Translate / Undo / "Show fewer" \u2014 match by text on the live root
+        // (article, or the stored cell for feedback cards).
+        var btnText = (btn.textContent || '').trim();
+        if (btnText) {
+          var allBtns = root.querySelectorAll('button, [role="button"]');
+          for (var j = 0; j < allBtns.length; j++) {
+            if ((allBtns[j].textContent || '').trim() === btnText) { target = allBtns[j]; break; }
+          }
+        }
+      }
+      if (!target) return;
+      // X positions menus at the live button's on-screen coords; if the
+      // background timeline has scrolled past, the menu opens off-screen
+      // (measured top:-1513). Center the live cell first, then re-pin any
+      // menu that opens to the user's mouse point.
+      target.scrollIntoView({ block: 'center' });
+      var preMenu = document.querySelector('#layers [role="menu"]');
+      forwardClick(target);
+      var liveCell = target.closest('[data-testid="cellInnerDiv"]');
+      if (liveCell && cardLiveCells) cardLiveCells.set(card, liveCell);
+      menuPendingCard = card;
+      moveMenuNear(mx, my, preMenu);
+      setTimeout(function () { refreshCard(card); }, 1500); // let X commit the state change first
+    };
+    var art = liveArticleFor(card);
+    if (art) { act(art); return; }
+    var stored = cardLiveCells && cardLiveCells.get(card);
+    if (stored && stored.isConnected) { act(stored); return; }
+    // X evicted the cell (virtualized timeline) \u2014 restore it, then act. This
+    // used to fall back to the reader, which read as "every click opens the
+    // detail page". Only a failed restore opens the reader now.
+    restoreLiveCell(card, function (art2) {
+      if (art2) setTimeout(function () { act(art2); }, 300);
+      else openReader(card.getAttribute('data-fc-status'));
+    });
+  }
+  // Reply (chat) icon \u2192 thread reader. Video \u2192 in-card play. Other action
+  // buttons (like, repost, bookmark, share, \u22ef caret) \u2192 forwardToLive. Anchors
+  // open in a new tab. Everything else stays inert so text selects and images copy.
+  function onCardClick(e) {
+    var card = e.target.closest ? e.target.closest('.fc-card') : null;
+    if (!card) return;
+    if (e.target.closest('[data-testid="reply"]')) {
+      e.preventDefault();
+      e.stopPropagation();
+      openReader(card.getAttribute('data-fc-status'));
+      return;
+    }
+    var player = e.target.closest('[data-testid="videoPlayer"], [data-testid="videoComponent"]');
+    if (player) {
+      e.preventDefault();
+      e.stopPropagation();
+      var pv = player.querySelector('video.fc-video');
+      if (pv) { pv.removeAttribute('data-fc-hover'); return; } // user engaged \u2014 keep playing on leave, controls take over
+      playVideoInCard(card, player);
+      return;
+    }
+    var btn = e.target.closest('button, [role="button"]');
+    if (btn && card.contains(btn) && !btn.closest('a[href]')) {
+      e.preventDefault();
+      e.stopPropagation();
+      var br = btn.getBoundingClientRect();
+      var mx = e.clientX || Math.round(br.left);
+      var my = e.clientY || Math.round(br.bottom);
+      forwardToLive(card, btn, mx, my);
+      return;
+    }
+    var a = e.target.closest('a[href]');
+    if (a) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.open(a.href, '_blank');
+    }
+  }
+  // Right-click a card (not tweet text / video / shift) \u2192 open the \u22ef caret menu
+  // at the pointer via forwardToLive.
+  function onCardContextMenu(e) {
+    if (e.shiftKey) return;
+    if (e.target.closest && e.target.closest('[data-testid="tweetText"]')) return;
+    if (e.target.closest && (e.target.closest('video') || e.target.closest('[data-testid="videoPlayer"], [data-testid="videoComponent"]'))) return;
+    var card = e.target.closest ? e.target.closest('.fc-card') : null;
+    if (!card || !grid || !grid.contains(card)) return;
+    var caretBtn = card.querySelector('[data-testid="caret"]');
+    if (!caretBtn) return;
+    e.preventDefault();
+    forwardToLive(card, caretBtn, e.clientX, e.clientY);
+  }
+  // After a layers menuitem click, watch the pending card's live cell and
+  // re-clone feedback UI (Not interested / Show fewer) into the card.
+  document.addEventListener('click', function (e) {
+    var mi = e.target.closest ? e.target.closest('#layers [role="menuitem"]') : null;
+    if (!mi) return;
+    var card = menuPendingCard;
+    if (!card || !cardLiveCells) return;
+    var liveCell = cardLiveCells.get(card);
+    if (!liveCell) return;
+    var cardId = card.getAttribute('data-fc-id');
+    var finished = false, settle = null;
+    // X swaps the cell in several steps; re-clone only once it has been quiet
+    // for 400ms, and again on later steps, until the 10s window closes.
+    var sync = function () {
+      if (!liveCell.isConnected) return;
+      var cur = card.parentNode ? card : null;
+      if (!cur && cardId) {
+        for (var i = 0; i < cards.length; i++) {
+          if (cards[i].getAttribute('data-fc-id') === cardId) { cur = cards[i]; break; }
+        }
+      }
+      if (!cur || !cur.parentNode) return;
+      card = replaceCardFromCell(cur, liveCell);
+    };
+    var obs = new MutationObserver(function () {
+      if (finished) return;
+      clearTimeout(settle);
+      settle = setTimeout(sync, 400);
+    });
+    obs.observe(liveCell, { subtree: true, childList: true, characterData: true });
+    setTimeout(function () { finished = true; obs.disconnect(); clearTimeout(settle); sync(); }, 10000);
+  }, true);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && readerOpen) closeReader(); });
+
+  function mount() {
+    if (overlay) return;
+    document.documentElement.classList.add('fc-home'); // home CSS: keep left nav, hide right sidebar
+    overlay = document.createElement('div');
+    overlay.id = ID;
+    var bg = getComputedStyle(document.body).backgroundColor || '#fff';
+    var pad = window.innerWidth < 600 ? '0' : '8px';
+    var gap = window.innerWidth < 600 ? 4 : GAP;
+    overlay.style.cssText = 'position:fixed;top:0;left:' + navWidth() + 'px;right:0;bottom:0;overflow-y:auto;' +
+      'overflow-x:hidden;z-index:9999;background:' + bg + ';padding:' + pad + ';';
+    // Mount INSIDE X's #layers portal: #layers lives in a z-index:0 ancestor
+    // stacking context, so a body-level z9999 overlay always painted ABOVE the
+    // menus/dialogs X portals there (share menu was unreachable). As an EARLIER
+    // sibling in the same context (z:0 vs their later DOM order) the grid still
+    // covers the timeline but X's menus paint on top. Fallback: body (tests).
+    var layersHost = document.getElementById('layers');
+    if (layersHost) overlay.style.zIndex = '0';
+    // Build marker: lets a live inspection confirm WHICH version is running
+    // (a stale extension load looks exactly like a logic bug otherwise).
+    try { overlay.setAttribute('data-fc-version', chrome.runtime.getManifest().version); }
+    catch (err) { overlay.setAttribute('data-fc-version', 'dev'); }
+    overlay.style.setProperty('--fc-bg', bg); // the clipped-card fade fades to the real bg
+    document.documentElement.style.setProperty('--fc-bg', bg); // lightbox modal uses it too
+    grid = document.createElement('div');
+    grid.id = 'fc-grid';
+    grid.style.cssText = 'gap:' + gap + 'px;';
+    overlay.appendChild(grid);
+    (layersHost || document.body).appendChild(overlay);
+    ensureLayoutBtn();
+    layout();
+    syncChromeUi();
+
+    grid.addEventListener('click', onCardClick, true); // capture: beat the clones' own link navs
+    grid.addEventListener('contextmenu', onCardContextMenu, true);
+    grid.addEventListener('mouseover', onGridOver);    // hover-to-play video previews
+    grid.addEventListener('mouseout', onGridOut);
+
+    overlay.addEventListener('scroll', function () {
+      noProgress = 0; // user engaged \u2192 allow loading again
+      if (loading || readerOpen || xMenuOpen()) return;
+      if (overlay.scrollTop + overlay.clientHeight > overlay.scrollHeight - 1500) {
+        loading = true;
+        // Targeted step + dwell: park X's viewport on the first cell still
+        // missing media so it hydrates before we move on (blind steps left
+        // permanent blanks \u2014 see advanceTimeline).
+        advanceTimeline();
+        setTimeout(function () { schedule(); loading = false; }, 1300);
+      }
+    }, { passive: true });
+
+    var container = document.querySelector('[data-testid="cellInnerDiv"]');
+    container = container ? container.parentElement : document.body;
+    mo = new MutationObserver(schedule);
+    mo.observe(container, { childList: true });
+    harvest();
+  }
+
+  function unmount() {
+    document.documentElement.classList.remove('fc-home');
+    if (mo) { mo.disconnect(); mo = null; }
+    if (overlay) { overlay.remove(); overlay = null; grid = null; }
+    if (backBtn) { backBtn.style.display = 'none'; }
+    readerOpen = false;
+    menuPendingCard = null;
+    seen = new Set(); firstSeen = Object.create(null); expandClicked = new WeakSet();
+    incomplete = Object.create(null);
+    cards = []; columnEls = []; curCols = 0; lastCount = 0; noProgress = 0;
+    syncChromeUi();
+  }
+
+  // ---- Typography ----------------------------------------------------------
+  // X's CSP blocks the crxjs module content script (src/content/main.ts), so the
+  // popup's font settings never reach X through it. This classic content script
+  // is CSP-exempt (isolated world) and reads chrome.storage directly, so it owns
+  // typography on X: injects a settings-driven <style>, re-applies on change.
+  // Size/weight/line-height/letter-spacing are scoped to tweet text (applying to
+  // every element breaks X's icon sizing); font-family is applied broadly.
+  var TYPO_DEFAULTS = {
+    fontFamily: 'Lexend Deca', fontSize: 16, fontWeight: 400,
+    lineHeight: 1.5, letterSpacing: 0,
+    features: { typography: true },
+  };
+
+  function loadFontLink(family) {
+    var id = 'fc-x-font';
+    var url = 'https://fonts.googleapis.com/css2?family=' +
+      encodeURIComponent(family).replace(/%20/g, '+') + '&display=swap';
+    chrome.runtime.sendMessage(
+      { type: 'FETCH_FONT_CSS', fontUrl: url },
+      function (response) {
+        if (chrome.runtime.lastError || !response || !response.success) return;
+        var style = document.getElementById(id);
+        if (!style) {
+          style = document.createElement('style');
+          style.id = id;
+          (document.head || document.documentElement).appendChild(style);
+        }
+        if (style.textContent !== response.css) style.textContent = response.css;
+      }
+    );
+  }
+
+  function applyTypography(s) {
+    var on = !s.features || s.features.typography !== false;
+    var style = document.getElementById('fc-x-type');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'fc-x-type';
+      (document.head || document.documentElement).appendChild(style);
+    }
+    if (!on) { style.textContent = ''; return; }
+    loadFontLink(s.fontFamily);
+    var fam = "'" + s.fontFamily + "', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    var textSel = '[data-testid="tweetText"], [data-testid="tweetText"] *, ' +
+      '#fc-grid .fc-card [data-testid="tweetText"], #fc-grid .fc-card [data-testid="tweetText"] *';
+    style.textContent =
+      'body, body * { font-family: ' + fam + ' !important; }\n' +
+      textSel + ' {\n' +
+      '  font-size: ' + s.fontSize + 'px !important;\n' +
+      '  font-weight: ' + s.fontWeight + ' !important;\n' +
+      '  line-height: ' + s.lineHeight + ' !important;\n' +
+      '  letter-spacing: ' + s.letterSpacing + 'px !important;\n' +
+      '}';
+  }
+
+  function refreshTypography() {
+    try {
+      chrome.storage.local.get(TYPO_DEFAULTS, function (res) {
+        if (chrome.runtime && chrome.runtime.lastError) { applyTypography(TYPO_DEFAULTS); return; }
+        applyTypography(res || TYPO_DEFAULTS);
+      });
+    } catch (e) { applyTypography(TYPO_DEFAULTS); }
+  }
+
+  function applyColPrefs(res) {
+    if (!res) return;
+    xColsMobile = clampInt(res.xColsMobile, 1, 3, 1);
+    xColsTablet = clampInt(res.xColsTablet, 1, 4, 2);
+    if (res.xColsDesktop === 'auto') xColsDesktop = 'auto';
+    else xColsDesktop = clampInt(res.xColsDesktop, 1, 6, 'auto');
+  }
+  function loadGridPrefs() {
+    try {
+      chrome.storage.local.get({
+        xColsMobile: 1, xColsTablet: 2, xColsDesktop: 'auto', xGridOff: false
+      }, function (res) {
+        applyColPrefs(res);
+        gridOff = !!(res && res.xGridOff);
+        updateGridToggleBtn();
+        if (gridOff) unmount();
+        else if (grid) { layout(); markClipped(); }
+        syncChromeUi();
+      });
+    } catch (e) { /* no storage */ }
+  }
+
+  try {
+    if (chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener(function (changes, area) {
+        if (area !== 'local') return;
+        refreshTypography();
+        if (changes.xLayout) loadLayoutMode();
+        if (changes.xColsMobile || changes.xColsTablet || changes.xColsDesktop || changes.xGridOff) {
+          loadGridPrefs();
+        }
+      });
+    }
+  } catch (e) { /* no storage access */ }
+  refreshTypography();
+  loadLayoutMode();
+  loadGridPrefs();
+
+  window.addEventListener('resize', layout);
+  setInterval(function () {
+    if (!isHome()) {
+      syncChromeUi();
+      if (readerOpen) return; // reader drove the background page to a thread \u2014 keep the grid mounted (hidden)
+      unmount();
+      return;
+    }
+    ensureGridToggleBtn();
+    syncChromeUi();
+    if (readerOpen) return;  // reading a thread that lives at /home? never; guard anyway
+    if (gridOff) {
+      if (overlay) unmount();
+      return; // no mount/layout/schedule/loader while grid off
+    }
+    if (!document.querySelector('[data-testid="cellInnerDiv"]')) return;
+    mount();
+    layout();
+    schedule();
+    syncChromeUi();
+    // Loader: fill until the grid is scrollable AND keep feeding while the user
+    // sits near the grid's bottom (a scroll event can't fire once scrollTop is
+    // pinned at max, so the scroll handler alone starves there \u2014 verified live).
+    // STOP after a few rounds with no progress so it can't spin forever (the
+    // "loop running" bug); any user scroll resets the counter. Progress = new
+    // cards OR an incomplete card getting refilled, so the loader keeps dwelling
+    // while media is still hydrating.
+    var stamp = cards.length + ':' + Object.keys(incomplete).length;
+    if (stamp === lastCount) noProgress++; else { noProgress = 0; lastCount = stamp; }
+    var needMore = overlay && (overlay.scrollHeight <= overlay.clientHeight + 400 ||
+      overlay.scrollTop + overlay.clientHeight > overlay.scrollHeight - 1500);
+    if (!loading && noProgress < 8 && needMore && !xMenuOpen()) { // 8 ticks \u2248 9.6s: outlasts one MEDIA_GRACE hydration dwell
+      loading = true;
+      advanceTimeline();
+      setTimeout(function () { schedule(); loading = false; }, 1300);
+    }
+  }, 1200);
+})();
+
+    // ---- END public/x-masonry.js ----
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startMasonry, { once: true });
+  else startMasonry();
+// Small settings panel for phones (no popup there). Writes the same keys the FontChanger
+// typography / columns code reads from chrome.storage.local.
+(() => {
+  'use strict';
+  // Only families that ship the Google Fonts "vietnamese" subset (checked 2026-11-11).
+  const FONTS = ['Lexend Deca', 'Plus Jakarta Sans', 'Manrope', 'Tilt Neon', 'Alata', 'Zalando Sans', 'Geologica', 'Readex Pro'];
+  const DEF = { fontFamily: 'Lexend Deca', fontSize: 16, fontWeight: 400, lineHeight: 1.5, xColsMobile: 1, xColsTablet: 2, xColsDesktop: 'auto' };
+  const vi = /^vi/i.test((document.documentElement && document.documentElement.lang) || navigator.language || '');
+  const T = vi
+    ? { font: 'Ph\u00f4ng ch\u1eef', size: 'C\u1ee1 ch\u1eef', weight: '\u0110\u1ed9 \u0111\u1eadm', lh: 'Gi\u00e3n d\u00f2ng', cols: 'S\u1ed1 c\u1ed9t', auto: 'T\u1ef1 \u0111\u1ed9ng', close: '\u0110\u00f3ng', title: 'C\u00e0i \u0111\u1eb7t ch\u1eef' }
+    : { font: 'Font', size: 'Font size', weight: 'Weight', lh: 'Line height', cols: 'Columns', auto: 'Auto', close: 'Close', title: 'Text settings' };
+  function bucket() {
+    const w = window.innerWidth;
+    if (w < 600) return 'mobile';
+    if (w <= 1200) return 'tablet';
+    return 'desktop';
+  }
+  function bucketKey(b) {
+    return b === 'mobile' ? 'xColsMobile' : b === 'tablet' ? 'xColsTablet' : 'xColsDesktop';
+  }
+  function el(tag, props, kids) {
+    const e = document.createElement(tag);
+    Object.assign(e, props || {});
+    (kids || []).forEach((k) => e.appendChild(typeof k === 'string' ? document.createTextNode(k) : k));
+    return e;
+  }
+  function row(label, input, valueEl) {
+    const r = el('label', {}, [el('span', { textContent: label }), input]);
+    r.style.cssText = 'display:flex;flex-direction:column;gap:3px;margin:4px 0;font:13px system-ui,sans-serif;color:#e7e9ea';
+    if (valueEl) r.firstChild.appendChild(valueEl);
+    return r;
+  }
+  function fillCols(sel, st) {
+    const b = bucket();
+    const opts = b === 'mobile' ? [1, 2, 3] : b === 'tablet' ? [1, 2, 3, 4] : ['auto', 1, 2, 3, 4, 5, 6];
+    sel.innerHTML = '';
+    opts.forEach((o) => sel.appendChild(el('option', { value: String(o), textContent: o === 'auto' ? T.auto : String(o) })));
+    sel.value = String(st[bucketKey(b)]);
+  }
+  function build(s) {
+    if (document.getElementById('xab-panel')) return;
+    const st = Object.assign({}, s);
+    const fab = el('button', { id: 'xab-fab', textContent: 'Aa', title: T.title, type: 'button' });
+    fab.style.cssText = 'position:fixed;right:6px;bottom:62px;z-index:2147483000;width:28px;height:28px;padding:0;border-radius:50%;border:none;background:#1d9bf0;color:#fff;opacity:.55;font:700 11px system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.3)';
+    const panel = el('div', { id: 'xab-panel' });
+    panel.style.cssText = 'position:fixed;right:6px;bottom:96px;z-index:2147483000;width:min(250px,calc(100vw - 12px));padding:8px;border-radius:12px;background:#16181c;border:1px solid #2f3336;box-shadow:0 4px 20px rgba(0,0,0,.5);display:none';
+    const fieldCss = 'padding:6px;border-radius:6px;background:#000;color:#fff;border:1px solid #536471;font-size:14px';
+    const sel = el('select', { id: 'xab-font' }); sel.style.cssText = fieldCss;
+    FONTS.forEach((f) => sel.appendChild(el('option', { value: f, textContent: f })));
+    sel.value = st.fontFamily;
+    const size = el('input', { id: 'xab-size', type: 'range', min: 12, max: 28, step: 1, value: st.fontSize });
+    const sizeV = el('b', { textContent: ' ' + st.fontSize + 'px' });
+    const wt = el('select', { id: 'xab-weight' }); wt.style.cssText = fieldCss;
+    [300, 400, 500, 600, 700].forEach((w) => wt.appendChild(el('option', { value: w, textContent: String(w) })));
+    wt.value = String(st.fontWeight);
+    const lh = el('input', { id: 'xab-lh', type: 'range', min: 1.2, max: 2.0, step: 0.1, value: st.lineHeight });
+    const lhV = el('b', { textContent: ' ' + st.lineHeight });
+    const cols = el('select', { id: 'xab-cols' }); cols.style.cssText = fieldCss;
+    fillCols(cols, st);
+    let lastBucket = bucket();
+    const close = el('button', { textContent: T.close, type: 'button' });
+    close.style.cssText = 'margin-top:4px;padding:4px 10px;border-radius:999px;border:1px solid #536471;background:transparent;color:#fff';
+    const change = () => {
+      const v = { fontFamily: sel.value, fontSize: +size.value, fontWeight: +wt.value, lineHeight: +(+lh.value).toFixed(1) };
+      sizeV.textContent = ' ' + v.fontSize + 'px'; lhV.textContent = ' ' + v.lineHeight;
+      Object.assign(st, v);
+      chrome.storage.local.set(v);
+    };
+    cols.addEventListener('change', () => {
+      const key = bucketKey(bucket());
+      const raw = cols.value;
+      const val = raw === 'auto' ? 'auto' : +raw;
+      st[key] = val;
+      chrome.storage.local.set({ [key]: val });
+    });
+    [sel, size, wt, lh].forEach((i) => i.addEventListener('input', change));
+    window.addEventListener('resize', () => {
+      const b = bucket();
+      if (b === lastBucket) return;
+      lastBucket = b;
+      fillCols(cols, st);
+    });
+    fab.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
+    close.addEventListener('click', () => { panel.style.display = 'none'; });
+    panel.append(row(T.font, sel), row(T.size, size, sizeV), row(T.weight, wt), row(T.lh, lh, lhV), row(T.cols, cols), close);
+    document.body.append(fab, panel);
+    if (typeof GM_registerMenuCommand === 'function') {
+      try { GM_registerMenuCommand(T.title, () => { panel.style.display = 'block'; }); } catch (_) {}
+    }
+  }
+  function start() { chrome.storage.local.get(DEF, build); }
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start, { once: true });
+})();
+
+})();

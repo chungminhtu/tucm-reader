@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
+!userscript/dist/
 release
 dist-ssr
 *.local
@@ -25,3 +26,4 @@ dist-ssr
 *.sw?
 pnpm-lock.yaml
 package-lock.json
+artifacts/

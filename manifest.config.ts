@@ -3,7 +3,7 @@ import pkg from './package.json'
 
 export default defineManifest({
   manifest_version: 3,
-  name: pkg.name,
+  name: 'TUCM Reader',
   version: pkg.version,
   icons: {
     48: 'public/logo.png',
@@ -27,6 +27,11 @@ export default defineManifest({
   }, {
     // Static CSS (browser-injected, bypasses X's strict CSP which blocks the JS above).
     css: ['src/content/x.css'],
+    matches: ['https://x.com/*', 'https://twitter.com/*'],
+    run_at: 'document_start',
+  }, {
+    // Shared ad hider also used by the userscript (public/x-adblock.js).
+    js: ['public/x-adblock.js'],
     matches: ['https://x.com/*', 'https://twitter.com/*'],
     run_at: 'document_start',
   }, {

@@ -4,8 +4,8 @@
 const fs = require('fs');
 const DIR = '/private/tmp/claude-501/-Volumes-DATA-TUCM-FontChanger-TUCM-ChromeExtension/2469f2b4-7a4a-4336-bfc1-25bb70ea0877/scratchpad';
 const CDP = 'http://localhost:9222';
-const SCRIPT = fs.readFileSync('/Volumes/DATA/TUCM/FontChanger_TUCM_ChromeExtension/public/x-masonry.js', 'utf8');
-const CSS = fs.readFileSync('/Volumes/DATA/TUCM/FontChanger_TUCM_ChromeExtension/src/content/x.css', 'utf8');
+const SCRIPT = fs.readFileSync('/Volumes/DATA/TUCM/tucm-reader/public/x-masonry.js', 'utf8');
+const CSS = fs.readFileSync('/Volumes/DATA/TUCM/tucm-reader/src/content/x.css', 'utf8');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function connect(wsUrl) {

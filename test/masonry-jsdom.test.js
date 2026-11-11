@@ -7,7 +7,7 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const SCRIPT = fs.readFileSync(
-  path.resolve('/Volumes/DATA/TUCM/FontChanger_TUCM_ChromeExtension/public/x-masonry.js'),
+  path.resolve('/Volumes/DATA/TUCM/tucm-reader/public/x-masonry.js'),
   'utf8'
 );
 
