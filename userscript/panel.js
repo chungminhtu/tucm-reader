@@ -7,8 +7,8 @@
   const DEF = { fontFamily: 'Lexend Deca', fontSize: 16, fontWeight: 400, lineHeight: 1.5, xColsMobile: 1, xColsTablet: 2, xColsDesktop: 'auto' };
   const vi = /^vi/i.test((document.documentElement && document.documentElement.lang) || navigator.language || '');
   const T = vi
-    ? { font: 'Phông chữ', size: 'Cỡ chữ', weight: 'Độ đậm', lh: 'Giãn dòng', cols: 'Số cột', auto: 'Tự động', close: 'Đóng', title: 'Cài đặt chữ' }
-    : { font: 'Font', size: 'Font size', weight: 'Weight', lh: 'Line height', cols: 'Columns', auto: 'Auto', close: 'Close', title: 'Text settings' };
+    ? { font: 'Phông chữ', size: 'Cỡ chữ', weight: 'Độ đậm', lh: 'Giãn dòng', cols: 'Số cột', mobile: 'Điện thoại', tablet: 'Máy tính bảng', desktop: 'Máy tính', now: 'đang dùng', auto: 'Tự động', close: 'Đóng', title: 'Cài đặt chữ' }
+    : { font: 'Font', size: 'Font size', weight: 'Weight', lh: 'Line height', cols: 'Columns', mobile: 'Phone', tablet: 'Tablet', desktop: 'Desktop', now: 'in use', auto: 'Auto', close: 'Close', title: 'Text settings' };
   function bucket() {
     const w = window.innerWidth;
     if (w < 600) return 'mobile';
@@ -30,13 +30,12 @@
     if (valueEl) r.firstChild.appendChild(valueEl);
     return r;
   }
-  function fillCols(sel, st) {
-    const b = bucket();
-    const opts = b === 'mobile' ? [1, 2, 3] : b === 'tablet' ? [1, 2, 3, 4] : ['auto', 1, 2, 3, 4, 5, 6];
-    sel.innerHTML = '';
-    opts.forEach((o) => sel.appendChild(el('option', { value: String(o), textContent: o === 'auto' ? T.auto : String(o) })));
-    sel.value = String(st[bucketKey(b)]);
-  }
+  // One column select per device size (same keys and ranges as the extension popup).
+  const COL_BUCKETS = [
+    { b: 'mobile', range: '<600px', opts: [1, 2, 3] },
+    { b: 'tablet', range: '600-1200px', opts: [1, 2, 3, 4] },
+    { b: 'desktop', range: '>1200px', opts: ['auto', 1, 2, 3, 4, 5, 6] },
+  ];
   function build(s) {
     if (document.getElementById('xab-panel')) return;
     const st = Object.assign({}, s);
@@ -54,9 +53,23 @@
     wt.value = String(st.fontWeight);
     const lh = el('input', { id: 'xab-lh', type: 'range', min: 1.2, max: 2.0, step: 0.1, value: st.lineHeight });
     const lhV = el('b', { textContent: ' ' + st.lineHeight });
-    const cols = el('select', { id: 'xab-cols' }); cols.style.cssText = fieldCss;
-    fillCols(cols, st);
-    let lastBucket = bucket();
+    const colRows = COL_BUCKETS.map((c) => {
+      const key = bucketKey(c.b);
+      const s2 = el('select', { id: 'xab-cols-' + c.b }); s2.style.cssText = fieldCss;
+      c.opts.forEach((o) => s2.appendChild(el('option', { value: String(o), textContent: o === 'auto' ? T.auto : String(o) })));
+      s2.value = String(st[key]);
+      s2.addEventListener('change', () => {
+        const val = s2.value === 'auto' ? 'auto' : +s2.value;
+        st[key] = val;
+        chrome.storage.local.set({ [key]: val });
+      });
+      const tag = el('b', { textContent: '' });
+      tag.style.color = '#1d9bf0';
+      return { b: c.b, tag, row: row(T.cols + ' · ' + T[c.b] + ' (' + c.range + ')', s2, tag) };
+    });
+    // Mark the select that applies to the current screen width.
+    const markBucket = () => { const b = bucket(); colRows.forEach((r) => { r.tag.textContent = r.b === b ? ' · ' + T.now : ''; }); };
+    markBucket();
     const close = el('button', { textContent: T.close, type: 'button' });
     close.style.cssText = 'margin-top:4px;padding:4px 10px;border-radius:999px;border:1px solid #536471;background:transparent;color:#fff';
     const change = () => {
@@ -65,20 +78,8 @@
       Object.assign(st, v);
       chrome.storage.local.set(v);
     };
-    cols.addEventListener('change', () => {
-      const key = bucketKey(bucket());
-      const raw = cols.value;
-      const val = raw === 'auto' ? 'auto' : +raw;
-      st[key] = val;
-      chrome.storage.local.set({ [key]: val });
-    });
     [sel, size, wt, lh].forEach((i) => i.addEventListener('input', change));
-    window.addEventListener('resize', () => {
-      const b = bucket();
-      if (b === lastBucket) return;
-      lastBucket = b;
-      fillCols(cols, st);
-    });
+    window.addEventListener('resize', markBucket);
     fab.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
     close.addEventListener('click', () => { panel.style.display = 'none'; });
     // Status line: shows whether the chosen font really loaded (evidence on phones).
@@ -93,7 +94,7 @@
     };
     window.addEventListener('xab-font-status', showStatus);
     showStatus();
-    panel.append(row(T.font, sel), fst, row(T.size, size, sizeV), row(T.weight, wt), row(T.lh, lh, lhV), row(T.cols, cols), close);
+    panel.append(row(T.font, sel), fst, row(T.size, size, sizeV), row(T.weight, wt), row(T.lh, lh, lhV), ...colRows.map((r) => r.row), close);
     let bar = document.getElementById('fc-fabbar');
     if (!bar) { bar = el('div', { id: 'fc-fabbar' }); document.body.appendChild(bar); }
     fab.setAttribute('aria-label', T.title);

@@ -88,9 +88,14 @@ await page.screenshot({ path: path.join(out, 'masonry-1.png') });
 await page.tap('#xab-fab'); await page.fill('#xab-size', '20'); await page.locator('#xab-size').dispatchEvent('input');
 await page.waitForFunction(() => getComputedStyle(document.querySelector('#fc-grid .fc-card [data-testid="tweetText"]')).fontSize === '20px', null, { timeout: 5000 }).catch(() => {});
 res.afterSize = await m();
-await page.selectOption('#xab-cols', '2');
+await page.selectOption('#xab-cols-mobile', '2');
 await page.waitForFunction(() => document.querySelectorAll('#fc-grid .fc-col').length === 2, null, { timeout: 5000 }).catch(() => {});
 res.afterCols = { cols: await page.evaluate(() => document.querySelectorAll('#fc-grid .fc-col').length) };
+// Tablet select is separate: changing it on a phone must not change the phone's columns.
+await page.selectOption('#xab-cols-tablet', '4');
+await page.waitForTimeout(800);
+res.afterTabletOnPhone = { cols: await page.evaluate(() => document.querySelectorAll('#fc-grid .fc-col').length),
+  mobileVal: await page.inputValue('#xab-cols-mobile'), tabletVal: await page.inputValue('#xab-cols-tablet') };
 await page.screenshot({ path: path.join(out, 'masonry-2.png') });
 // Bookerly: Amazon-only font -> stack 'Bookerly','Literata', loads Literata (has Vietnamese); panel shows the load status.
 await page.selectOption('#xab-font', 'Bookerly');
@@ -114,7 +119,7 @@ console.log(JSON.stringify(res, null, 1));
 const d = res.default;
 const pass = d.masonry && d.htmlClass.includes('fc-home') && d.cols === 1 && d.cards >= 3 && !d.adInGrid && d.fam === 'Lexend Deca' && d.size === '16px' && d.viFont &&
   res.afterSize.size === '20px' && res.errors.length === 0 && d.leftGapCardToText !== null && d.leftGapCardToText <= 24 &&
-  d.noFullHeight && d.hasGridToggle && d.cardsNoInnerScroll && d.overlayPadL === '0px' && res.afterCols.cols === 2 &&
+  d.noFullHeight && d.hasGridToggle && d.cardsNoInnerScroll && d.overlayPadL === '0px' && res.afterCols.cols === 2 && res.afterTabletOnPhone.cols === 2 && res.afterTabletOnPhone.tabletVal === '4' &&
   /^"?Bookerly"?, "?Literata/.test(res.bookerly.stack) && res.bookerly.literataCss && /Literata/.test(res.bookerly.status) && res.condensed.rowDir === 'column';
 console.log('Video:', await v.path(), '\nẢnh:', path.join(out, 'masonry-1.png'), path.join(out, 'masonry-2.png'));
 console.log(pass ? 'PASS' : 'FAIL'); process.exit(pass ? 0 : 1);

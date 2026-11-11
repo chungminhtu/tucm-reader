@@ -2,7 +2,7 @@
 // @name         TUCM Reader (X)
 // @name:vi      TUCM Reader (X)
 // @namespace    x-adblock-edge
-// @version      2026.1112.0325
+// @version      2026.1112.0338
 // @description  TUCM Reader for x.com: masonry grid, per-device columns, fonts, and ad hiding (EN/VI). Network: Google Fonts + syndication.twimg.com only.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -1563,8 +1563,8 @@ const chrome = (() => {
   const DEF = { fontFamily: 'Lexend Deca', fontSize: 16, fontWeight: 400, lineHeight: 1.5, xColsMobile: 1, xColsTablet: 2, xColsDesktop: 'auto' };
   const vi = /^vi/i.test((document.documentElement && document.documentElement.lang) || navigator.language || '');
   const T = vi
-    ? { font: 'Ph\u00f4ng ch\u1eef', size: 'C\u1ee1 ch\u1eef', weight: '\u0110\u1ed9 \u0111\u1eadm', lh: 'Gi\u00e3n d\u00f2ng', cols: 'S\u1ed1 c\u1ed9t', auto: 'T\u1ef1 \u0111\u1ed9ng', close: '\u0110\u00f3ng', title: 'C\u00e0i \u0111\u1eb7t ch\u1eef' }
-    : { font: 'Font', size: 'Font size', weight: 'Weight', lh: 'Line height', cols: 'Columns', auto: 'Auto', close: 'Close', title: 'Text settings' };
+    ? { font: 'Ph\u00f4ng ch\u1eef', size: 'C\u1ee1 ch\u1eef', weight: '\u0110\u1ed9 \u0111\u1eadm', lh: 'Gi\u00e3n d\u00f2ng', cols: 'S\u1ed1 c\u1ed9t', mobile: '\u0110i\u1ec7n tho\u1ea1i', tablet: 'M\u00e1y t\u00ednh b\u1ea3ng', desktop: 'M\u00e1y t\u00ednh', now: '\u0111ang d\u00f9ng', auto: 'T\u1ef1 \u0111\u1ed9ng', close: '\u0110\u00f3ng', title: 'C\u00e0i \u0111\u1eb7t ch\u1eef' }
+    : { font: 'Font', size: 'Font size', weight: 'Weight', lh: 'Line height', cols: 'Columns', mobile: 'Phone', tablet: 'Tablet', desktop: 'Desktop', now: 'in use', auto: 'Auto', close: 'Close', title: 'Text settings' };
   function bucket() {
     const w = window.innerWidth;
     if (w < 600) return 'mobile';
@@ -1586,13 +1586,12 @@ const chrome = (() => {
     if (valueEl) r.firstChild.appendChild(valueEl);
     return r;
   }
-  function fillCols(sel, st) {
-    const b = bucket();
-    const opts = b === 'mobile' ? [1, 2, 3] : b === 'tablet' ? [1, 2, 3, 4] : ['auto', 1, 2, 3, 4, 5, 6];
-    sel.innerHTML = '';
-    opts.forEach((o) => sel.appendChild(el('option', { value: String(o), textContent: o === 'auto' ? T.auto : String(o) })));
-    sel.value = String(st[bucketKey(b)]);
-  }
+  // One column select per device size (same keys and ranges as the extension popup).
+  const COL_BUCKETS = [
+    { b: 'mobile', range: '<600px', opts: [1, 2, 3] },
+    { b: 'tablet', range: '600-1200px', opts: [1, 2, 3, 4] },
+    { b: 'desktop', range: '>1200px', opts: ['auto', 1, 2, 3, 4, 5, 6] },
+  ];
   function build(s) {
     if (document.getElementById('xab-panel')) return;
     const st = Object.assign({}, s);
@@ -1610,9 +1609,23 @@ const chrome = (() => {
     wt.value = String(st.fontWeight);
     const lh = el('input', { id: 'xab-lh', type: 'range', min: 1.2, max: 2.0, step: 0.1, value: st.lineHeight });
     const lhV = el('b', { textContent: ' ' + st.lineHeight });
-    const cols = el('select', { id: 'xab-cols' }); cols.style.cssText = fieldCss;
-    fillCols(cols, st);
-    let lastBucket = bucket();
+    const colRows = COL_BUCKETS.map((c) => {
+      const key = bucketKey(c.b);
+      const s2 = el('select', { id: 'xab-cols-' + c.b }); s2.style.cssText = fieldCss;
+      c.opts.forEach((o) => s2.appendChild(el('option', { value: String(o), textContent: o === 'auto' ? T.auto : String(o) })));
+      s2.value = String(st[key]);
+      s2.addEventListener('change', () => {
+        const val = s2.value === 'auto' ? 'auto' : +s2.value;
+        st[key] = val;
+        chrome.storage.local.set({ [key]: val });
+      });
+      const tag = el('b', { textContent: '' });
+      tag.style.color = '#1d9bf0';
+      return { b: c.b, tag, row: row(T.cols + ' \u00b7 ' + T[c.b] + ' (' + c.range + ')', s2, tag) };
+    });
+    // Mark the select that applies to the current screen width.
+    const markBucket = () => { const b = bucket(); colRows.forEach((r) => { r.tag.textContent = r.b === b ? ' \u00b7 ' + T.now : ''; }); };
+    markBucket();
     const close = el('button', { textContent: T.close, type: 'button' });
     close.style.cssText = 'margin-top:4px;padding:4px 10px;border-radius:999px;border:1px solid #536471;background:transparent;color:#fff';
     const change = () => {
@@ -1621,20 +1634,8 @@ const chrome = (() => {
       Object.assign(st, v);
       chrome.storage.local.set(v);
     };
-    cols.addEventListener('change', () => {
-      const key = bucketKey(bucket());
-      const raw = cols.value;
-      const val = raw === 'auto' ? 'auto' : +raw;
-      st[key] = val;
-      chrome.storage.local.set({ [key]: val });
-    });
     [sel, size, wt, lh].forEach((i) => i.addEventListener('input', change));
-    window.addEventListener('resize', () => {
-      const b = bucket();
-      if (b === lastBucket) return;
-      lastBucket = b;
-      fillCols(cols, st);
-    });
+    window.addEventListener('resize', markBucket);
     fab.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
     close.addEventListener('click', () => { panel.style.display = 'none'; });
     // Status line: shows whether the chosen font really loaded (evidence on phones).
@@ -1649,7 +1650,7 @@ const chrome = (() => {
     };
     window.addEventListener('xab-font-status', showStatus);
     showStatus();
-    panel.append(row(T.font, sel), fst, row(T.size, size, sizeV), row(T.weight, wt), row(T.lh, lh, lhV), row(T.cols, cols), close);
+    panel.append(row(T.font, sel), fst, row(T.size, size, sizeV), row(T.weight, wt), row(T.lh, lh, lhV), ...colRows.map((r) => r.row), close);
     let bar = document.getElementById('fc-fabbar');
     if (!bar) { bar = el('div', { id: 'fc-fabbar' }); document.body.appendChild(bar); }
     fab.setAttribute('aria-label', T.title);

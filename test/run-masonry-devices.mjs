@@ -69,7 +69,7 @@ let ok = true;
   await waitGrid(page);
   const defCols = await page.evaluate(() => document.querySelectorAll('#fc-grid .fc-col').length);
   await page.tap('#xab-fab').catch(() => page.click('#xab-fab'));
-  await page.selectOption('#xab-cols', '3');
+  await page.selectOption('#xab-cols-tablet', '3');
   await page.waitForFunction(() => document.querySelectorAll('#fc-grid .fc-col').length === 3, null, { timeout: 5000 }).catch(() => {});
   const after = await page.evaluate(() => document.querySelectorAll('#fc-grid .fc-col').length);
   result.ipadPortrait = { defCols, afterCols: after, pass: defCols === 2 && after === 3 };
