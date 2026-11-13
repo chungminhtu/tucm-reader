@@ -15,7 +15,9 @@
   var PREFIXES = [
     'promoted by',
     '\u0111\u01b0\u1ee3c qu\u1ea3ng b\u00e1 b\u1edfi',
-    'qu\u1ea3ng c\u00e1o b\u1edfi'
+    'qu\u1ea3ng c\u00e1o b\u1edfi',
+    'ad from',
+    'qu\u1ea3ng c\u00e1o t\u1eeb'
   ];
 
   var queue = [];
@@ -55,7 +57,8 @@
     if (!t) return false;
     if (LABELS[t]) return true;
     for (var i = 0; i < PREFIXES.length; i++) {
-      if (t.indexOf(PREFIXES[i]) === 0) return true;
+      var pf = PREFIXES[i];
+      if (t.indexOf(pf) === 0 && (t.length === pf.length || t.charAt(pf.length) === ' ')) return true;
     }
     return false;
   }

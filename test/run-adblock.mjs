@@ -61,6 +61,29 @@ const HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>x-adblock 
       <div data-testid="tweetText">normal tweet</div>
     </article>
   </div>
+  <div data-testid="cellInnerDiv" id="c-i">
+    <article>
+      <div data-testid="User-Name"><a href="/i">I</a></div>
+      <time datetime="2024-01-01">1h</time>
+      <div data-testid="tweetText">post with ad label below</div>
+    </article>
+    <div class="adfrom"><span id="label-i">Ad from lightapaw.com</span></div>
+  </div>
+  <div data-testid="cellInnerDiv" id="c-j">
+    <article>
+      <div data-testid="User-Name"><a href="/j">J</a></div>
+      <time datetime="2024-01-01">1h</time>
+      <div data-testid="tweetText">split label</div>
+    </article>
+    <div class="adfrom"><span id="label-j">Ad from <a href="/x">lightapaw.com</a></span></div>
+  </div>
+  <div data-testid="cellInnerDiv" id="c-k">
+    <article>
+      <div data-testid="User-Name"><a href="/k">K</a></div>
+      <time datetime="2024-01-01">1h</time>
+      <div class="meta"><span>Adjust settings</span><span>Ad fromage</span></div>
+    </article>
+  </div>
   <div id="fc-grid">
     <div class="fc-card" id="card-e">
       <article>
@@ -151,6 +174,21 @@ async function main() {
       };
     });
     record('e', r.hidden === '1' && r.reason === 'label', r);
+  }
+
+  // i, j: "Ad from <domain>" label below the post (one text node / split by link)
+  for (const id of ['i', 'j']) {
+    const r = await page.evaluate((id) => {
+      const c = document.getElementById('c-' + id);
+      return { hidden: c.getAttribute('data-xab-hidden'), reason: c.getAttribute('data-xab-reason') };
+    }, id);
+    record(id, r.hidden === '1' && r.reason === 'label', r);
+  }
+
+  // k negative: words that merely start with "ad"
+  {
+    const r = await page.evaluate(() => ({ hidden: document.getElementById('c-k').getAttribute('data-xab-hidden') }));
+    record('k', r.hidden !== '1', r);
   }
 
   // f negative
