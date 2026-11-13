@@ -242,6 +242,7 @@ async function initPopup() {
       <div class="extension-info">
         <span class="extension-name">${extensionName}</span>
         <span class="extension-version">v${extensionVersion}</span>
+        <button id="update-btn" class="update-btn" title="Cập nhật extension">⟳ Cập nhật</button>
       </div>
     </div>
     <div class="main-content">
@@ -293,6 +294,9 @@ async function initPopup() {
 
   setTypographyControlsEnabled(settings.features.typography)
   initXCols()
+  document.getElementById('update-btn')?.addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('update.html') })
+  })
 
   const allowDomainButton = document.getElementById('allow-domain-btn') as HTMLButtonElement | null
   if (allowDomainButton && currentHost && !domainAllowed) {

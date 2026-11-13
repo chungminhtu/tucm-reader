@@ -740,3 +740,14 @@ select:disabled {
     background: rgba(255, 255, 255, 0.3);
   }
 }
+
+.update-btn {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}

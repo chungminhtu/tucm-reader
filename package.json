@@ -1,7 +1,7 @@
 {
   "name": "tucm-reader",
   "type": "module",
-  "version": "1.2.47",
+  "version": "1.2.48",
   "private": true,
   "scripts": {
     "dev": "vite",

@@ -51,6 +51,9 @@ export default defineManifest({
     // In-card video playback on X: background fetches the public syndication
     // JSON (page CSP/CORS block it from the content script).
     'https://cdn.syndication.twimg.com/*',
+    // Self-update button (popup -> update.html): version + file list on the dist server.
+    'http://minhtu-m5max-64gb.netbird.selfhosted/*',
+    'http://192.168.8.180/*',
   ],
   side_panel: {
     default_path: 'src/sidepanel/index.html',
