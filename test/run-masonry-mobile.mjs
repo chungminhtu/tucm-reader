@@ -45,6 +45,8 @@ await ctx.addInitScript(() => {
   document.addEventListener('DOMContentLoaded', () => {
     const cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
     if (!cells.length) return;
+    // Live X: the cell's first child carries the timeline divider (class r-qklmqi = border-bottom 1px).
+    cells.forEach((c) => { if (c.firstElementChild) c.firstElementChild.style.borderBottom = '1px solid rgb(239, 243, 244)'; });
     const first = cells[0].querySelector('[data-testid="tweetText"]');
     if (first) first.textContent = 'Tiếng Việt: ẩn quảng cáo ở Hà Nội. Được quảng bá — Ơ ư ế ộ ữ.';
     const ad = cells[0].cloneNode(true);
@@ -81,6 +83,10 @@ const m = () => page.evaluate(() => {
     hasGridToggle: !!document.getElementById('fc-gridtoggle'),
     cardsNoInnerScroll: cards.every((c) => c.scrollHeight <= c.clientHeight + 4),
     overlayPadL: ov ? getComputedStyle(ov).paddingLeft : null,
+    // Lines drawn between post 1 and post 2: X's inner divider + card bottom + next card top.
+    dividerLines: cards.length > 1 ? [parseFloat(getComputedStyle(cards[0].firstElementChild).borderBottomWidth), parseFloat(getComputedStyle(cards[0]).borderBottomWidth),
+      parseFloat(getComputedStyle(cards[1]).borderTopWidth)].filter((w) => w > 0).length : null,
+    cardGap: cards.length > 1 ? Math.round(cards[1].getBoundingClientRect().top - cards[0].getBoundingClientRect().bottom) : null,
   };
 });
 const res = { default: await m() };
@@ -119,7 +125,7 @@ console.log(JSON.stringify(res, null, 1));
 const d = res.default;
 const pass = d.masonry && d.htmlClass.includes('fc-home') && d.cols === 1 && d.cards >= 3 && !d.adInGrid && d.fam === 'Lexend Deca' && d.size === '16px' && d.viFont &&
   res.afterSize.size === '20px' && res.errors.length === 0 && d.leftGapCardToText !== null && d.leftGapCardToText <= 24 &&
-  d.noFullHeight && d.hasGridToggle && d.cardsNoInnerScroll && d.overlayPadL === '0px' && res.afterCols.cols === 2 && res.afterTabletOnPhone.cols === 2 && res.afterTabletOnPhone.tabletVal === '4' &&
+  d.dividerLines === 1 && d.cardGap === 0 && d.noFullHeight && d.hasGridToggle && d.cardsNoInnerScroll && d.overlayPadL === '0px' && res.afterCols.cols === 2 && res.afterTabletOnPhone.cols === 2 && res.afterTabletOnPhone.tabletVal === '4' &&
   /^"?Bookerly"?, "?Literata/.test(res.bookerly.stack) && res.bookerly.literataCss && /Literata/.test(res.bookerly.status) && res.condensed.rowDir === 'column';
 console.log('Video:', await v.path(), '\nẢnh:', path.join(out, 'masonry-1.png'), path.join(out, 'masonry-2.png'));
 console.log(pass ? 'PASS' : 'FAIL'); process.exit(pass ? 0 : 1);

@@ -137,6 +137,11 @@ html.fc-home [data-testid="primaryColumn"] {
   user-select: text;
   -webkit-touch-callout: none;
 }
+/* The clone keeps X's own cell divider (border-bottom on the cell's first
+   child). The card already has a border, so drop X's to avoid a double line. */
+#fc-grid .fc-card > * {
+  border-bottom-width: 0 !important;
+}
 #fc-grid .fc-card [data-testid="tweetText"] {
   cursor: text;
   -webkit-touch-callout: default;
@@ -251,13 +256,14 @@ html.fc-home [data-testid="primaryColumn"] {
 
 /* Mobile: flush cards, tighter column gap, keep avatar overlay + hdr indent. */
 @media (max-width: 599px) {
+  /* One divider per post (like X): cards touch, only a bottom border. */
   #fc-grid .fc-col {
-    gap: 4px;
+    gap: 0;
   }
   #fc-grid .fc-card {
     border-radius: 0;
-    border-left: none;
-    border-right: none;
+    border: none;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.35);
   }
   #fc-grid .fc-card article {
     padding-left: 8px !important;

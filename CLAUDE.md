@@ -1,4 +1,4 @@
-# ⚠️ ALWAYS BUMP + BUILD + COMMIT + PUSH — NEVER ASK. Every code change, every time. Non-negotiable. See "Ship on finish" below.
+# ⚠️ ALWAYS BUMP + BUILD EVERYTHING + COMMIT + PUSH + DEPLOY — IMMEDIATELY, NEVER ASK. (owner rule, 2026-11-14: never leave changed files uncommitted) Every code change, every time. Non-negotiable. See "Ship on finish" below.
 
 # 🚨 CRITICAL — ONE SOURCE, TWO TARGETS (owner rule, 2026-11-11)
 
@@ -46,6 +46,14 @@ When any code change is finished, ALWAYS do this automatically, without asking:
 3. `git commit` the changed source (not the unrelated pre-existing
    `package-lock.json` unless asked).
 4. `git push`.
+5. DEPLOY at once (all the way): in `/Volumes/DATA/TOOLS/x-adblock-edge/dist` add the symlink
+   `tucm-reader-<version>.zip -> .../release/crx-tucm-reader-<version>.zip` and repoint
+   `tucm-reader-latest.zip` to it (`update` -> `dist/` and `x-masonry.user.js` already point here).
+   Then check `curl` of NetBird `:7445` and LAN `:7446` shows the new version.
+
+Build EVERY target on every change: `npm run build` AND `python3 userscript/build.py`.
+Never end a turn with modified tracked files (`git status --short` must be clean of `M` lines).
+Stage by name, `git commit -- <paths>`; other sessions share this repo.
 
 The user does not want to be asked each time. "bump build and commit push always."
 
