@@ -67,9 +67,11 @@ html.fc-home [data-testid="primaryColumn"] {
   align-items: center;
 }
 #fc-fabbar:empty { display: none; }
+#fc-reload { order: 0; }
 #fc-layout { order: 1; }
 #fc-gridtoggle { order: 2; }
 #xab-fab { order: 3; }
+#fc-reload,
 #fc-layout,
 #fc-gridtoggle,
 #xab-fab {
@@ -97,6 +99,7 @@ html.fc-home [data-testid="primaryColumn"] {
 #fc-fabbar * {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }
+#fc-reload:hover,
 #fc-layout:hover,
 #fc-gridtoggle:hover,
 #xab-fab:hover {
@@ -292,4 +295,21 @@ html.fc-home [data-testid="primaryColumn"] {
     margin-left: 0 !important;
     margin-right: 0 !important;
   }
+}
+
+/* Phone: the button bar sits at the bottom edge (x-masonry.js placeFabBar lifts
+   it while X's BottomBar is on screen). */
+@media (max-width: 599px) {
+  #fc-fabbar { bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* No browser pull-to-refresh / scroll chaining on any X page (grid and normal
+   page). X's own JS pull-to-refresh is stopped in x-masonry.js. */
+html, body {
+  overscroll-behavior-y: none !important;
+}
+
+/* Quoted post: a light gray box, so a quote is clear from the post around it. */
+article div[role="link"]:has([data-testid="User-Name"]) {
+  background-color: rgba(128, 128, 128, 0.12) !important;
 }

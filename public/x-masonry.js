@@ -473,7 +473,9 @@
     masonry: [[2, 2, 7, 9], [11, 2, 7, 5], [2, 13, 7, 5], [11, 9, 7, 9]],
     rows: [[2, 2, 7, 7], [11, 2, 7, 7], [2, 11, 7, 7], [11, 11, 7, 7]],
     grid: [[2, 3, 4, 14], [8, 3, 4, 14], [14, 3, 4, 14]],
-    feed: [[2, 3, 16, 3], [2, 8.5, 16, 3], [2, 14, 16, 3]]
+    feed: [[2, 3, 16, 3], [2, 8.5, 16, 3], [2, 14, 16, 3]],
+    // Circular arrow (SVG path, not rects).
+    reload: 'M10 3a7 7 0 1 0 7 7h-2.2a4.8 4.8 0 1 1-1.4-3.4L11 9h6V3l-2.1 2.1A7 7 0 0 0 10 3z'
   };
   function setIcon(btn, name, label) {
     var NS = 'http://www.w3.org/2000/svg';
@@ -482,7 +484,11 @@
     svg.setAttribute('width', '20');
     svg.setAttribute('height', '20');
     svg.setAttribute('aria-hidden', 'true');
-    ICONS[name].forEach(function (r) {
+    if (typeof ICONS[name] === 'string') {
+      var pth = document.createElementNS(NS, 'path');
+      pth.setAttribute('d', ICONS[name]); pth.setAttribute('fill', 'currentColor');
+      svg.appendChild(pth);
+    } else ICONS[name].forEach(function (r) {
       var e = document.createElementNS(NS, 'rect');
       e.setAttribute('x', r[0]); e.setAttribute('y', r[1]);
       e.setAttribute('width', r[2]); e.setAttribute('height', r[3]);
@@ -494,6 +500,58 @@
     btn.title = label;
     btn.setAttribute('aria-label', label);
   }
+
+  // ---- Reload button + no pull-to-refresh (owner 2026-11-14) ----------------
+  // Scrolling up on a phone ended in a pull-to-refresh that loaded new posts and
+  // lost the place. Two sources: the browser's own pull-to-refresh (x.css sets
+  // overscroll-behavior:none on html/body and the grid) and X's OWN JS
+  // pull-to-refresh (proven live: a touch pull at scrollY 0 fires a HomeTimeline
+  // request; only reaching the top does not). We stop that downward pull's
+  // touchmove at window capture so X never sees it. New posts: the reload button.
+  var reloadBtn = null;
+  function ensureReloadBtn() {
+    if (reloadBtn || !document.body) return;
+    reloadBtn = document.createElement('button');
+    reloadBtn.id = 'fc-reload';
+    reloadBtn.type = 'button';
+    reloadBtn.addEventListener('click', function () { location.reload(); });
+    fabBar().appendChild(reloadBtn);
+    setIcon(reloadBtn, 'reload', 'Reload page (new posts)');
+  }
+  var ptrX = null, ptrY = null;
+  window.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 1) { ptrX = e.touches[0].clientX; ptrY = e.touches[0].clientY; }
+    else ptrY = null;
+  }, { capture: true, passive: true });
+  window.addEventListener('touchmove', function (e) {
+    if (ptrY === null || e.touches.length !== 1) return;
+    var dy = e.touches[0].clientY - ptrY, dx = e.touches[0].clientX - ptrX;
+    var top = (document.scrollingElement || document.documentElement).scrollTop <= 0;
+    if (top && dy > 0 && dy > Math.abs(dx)) e.stopPropagation();
+  }, { capture: true, passive: true });
+
+  // Phone: keep the button bar at the bottom edge; lift it only while X's own
+  // bottom nav (BottomBar) is on screen, so it never covers the nav icons.
+  function placeFabBar() {
+    var bar = document.getElementById('fc-fabbar');
+    if (!bar) return;
+    if (window.innerWidth >= 600) { bar.style.bottom = ''; return; }
+    var lift = 0;
+    var bb = document.querySelector('[data-testid="BottomBar"]');
+    if (bb) {
+      var r = bb.getBoundingClientRect();
+      if (r.height > 0 && r.top < window.innerHeight - 4) {
+        // X fades the bar out while you scroll down (opacity, still in the DOM and
+        // still hit-testable), so measure the real opacity up the tree.
+        var op = 1;
+        for (var n = bb; n && n.nodeType === 1; n = n.parentElement) op *= parseFloat(getComputedStyle(n).opacity) || 0;
+        var hit = document.elementFromPoint(r.left + 12, Math.min(window.innerHeight - 2, r.top + r.height / 2));
+        if (op > 0.6 && hit && bb.contains(hit)) lift = Math.max(0, window.innerHeight - r.top);
+      }
+    }
+    bar.style.bottom = 'calc(' + (lift + 8) + 'px + env(safe-area-inset-bottom, 0px))';
+  }
+  setInterval(placeFabBar, 250);
 
   // ---- Layout mode (masonry <-> aligned rows) -------------------------------
   function updateLayoutBtn() {
@@ -977,7 +1035,7 @@
     var bg = getComputedStyle(document.body).backgroundColor || '#fff';
     var pad = window.innerWidth < 600 ? '0' : '8px';
     var gap = window.innerWidth < 600 ? 4 : GAP;
-    overlay.style.cssText = 'position:fixed;top:0;left:' + navWidth() + 'px;right:0;bottom:0;overflow-y:auto;' +
+    overlay.style.cssText = 'position:fixed;top:0;left:' + navWidth() + 'px;right:0;bottom:0;overflow-y:auto;overscroll-behavior:none;' +
       'overflow-x:hidden;z-index:9999;background:' + bg + ';padding:' + pad + ';';
     // Mount INSIDE X's #layers portal: #layers lives in a z-index:0 ancestor
     // stacking context, so a body-level z9999 overlay always painted ABOVE the
@@ -1147,7 +1205,9 @@
   loadGridPrefs();
 
   window.addEventListener('resize', layout);
+  if (document.body) ensureReloadBtn(); else document.addEventListener('DOMContentLoaded', ensureReloadBtn, { once: true });
   setInterval(function () {
+    ensureReloadBtn();
     if (!isHome()) {
       syncChromeUi();
       if (readerOpen) return; // reader drove the background page to a thread — keep the grid mounted (hidden)
