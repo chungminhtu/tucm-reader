@@ -313,3 +313,19 @@ html, body {
 article div[role="link"]:has([data-testid="User-Name"]) {
   background-color: rgba(128, 128, 128, 0.12) !important;
 }
+
+/* Quoted X Article: X places the full-width article card (article-cover-image)
+   in the same flex-direction:row container as the quote's tweetText (flex:8 1 0%).
+   The article card takes 100% width, squeezing the tweetText sibling to 0px wide;
+   with our line-clamp override above, that 0px-wide text wraps one character per
+   line and stretches the quote box to thousands of pixels of empty gray space.
+   Stack the row vertically so the article card and any quote text sit cleanly. */
+article div[role="link"]:has([data-testid="User-Name"]) div:has(> * [data-testid="article-cover-image"]):has(> * [data-testid="tweetText"]) {
+  flex-direction: column !important;
+}
+article div[role="link"]:has([data-testid="User-Name"]) div:has(> * [data-testid="article-cover-image"]):has(> * [data-testid="tweetText"]) > * {
+  width: 100% !important;
+  flex-basis: auto !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}

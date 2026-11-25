@@ -119,6 +119,19 @@ res.condensed = await page.evaluate((html) => {
   const m = col.firstElementChild.querySelector('[data-testid="testCondensedMedia"]');
   return { rowDir: m && getComputedStyle(m.parentElement).flexDirection };
 }, fs.readFileSync(path.join(root, 'test/fixtures/live-quote-compact-card.html'), 'utf8'));
+// Quoted X Article: article-cover-image (100% width) + tweetText (flex:8 1 0%) in one flex-row must stack so tweetText is not squeezed to 0px wide.
+res.quoteArticle = await page.evaluate(() => {
+  const col = document.querySelector('#fc-grid .fc-col');
+  col.insertAdjacentHTML('afterbegin', '<div class="fc-card"><article><div role="link" style="display:flex;flex-direction:column;width:320px">' +
+    '<div data-testid="User-Name">Author</div>' +
+    '<div id="qa-row" style="display:flex;flex-direction:row">' +
+      '<div style="flex:0 0 auto;width:320px"><div data-testid="article-cover-image" style="height:140px"></div></div>' +
+      '<div style="flex:8 1 0%;min-width:0"><div data-testid="tweetText">Long quoted article commentary text that used to wrap one character per line at zero width and stretch the card to thousands of pixels.</div></div>' +
+    '</div></div></article></div>');
+  const row = document.getElementById('qa-row');
+  const t = row.querySelector('[data-testid="tweetText"]').getBoundingClientRect();
+  return { rowDir: getComputedStyle(row).flexDirection, tW: Math.round(t.width), tH: Math.round(t.height) };
+});
 res.errors = csp;
 const v = page.video(); await ctx.close(); await browser.close();
 console.log(JSON.stringify(res, null, 1));
@@ -126,6 +139,7 @@ const d = res.default;
 const pass = d.masonry && d.htmlClass.includes('fc-home') && d.cols === 1 && d.cards >= 3 && !d.adInGrid && d.fam === 'Lexend Deca' && d.size === '16px' && d.viFont &&
   res.afterSize.size === '20px' && res.errors.length === 0 && d.leftGapCardToText !== null && d.leftGapCardToText <= 24 &&
   d.dividerLines === 1 && d.cardGap === 0 && d.noFullHeight && d.hasGridToggle && d.cardsNoInnerScroll && d.overlayPadL === '0px' && res.afterCols.cols === 2 && res.afterTabletOnPhone.cols === 2 && res.afterTabletOnPhone.tabletVal === '4' &&
-  /^"?Bookerly"?, "?Literata/.test(res.bookerly.stack) && res.bookerly.literataCss && /Literata/.test(res.bookerly.status) && res.condensed.rowDir === 'column';
+  /^"?Bookerly"?, "?Literata/.test(res.bookerly.stack) && res.bookerly.literataCss && /Literata/.test(res.bookerly.status) && res.condensed.rowDir === 'column' &&
+  res.quoteArticle.rowDir === 'column' && res.quoteArticle.tW >= 150 && res.quoteArticle.tH < 400;
 console.log('Video:', await v.path(), '\nẢnh:', path.join(out, 'masonry-1.png'), path.join(out, 'masonry-2.png'));
 console.log(pass ? 'PASS' : 'FAIL'); process.exit(pass ? 0 : 1);
